@@ -30,6 +30,7 @@ export interface PrCommit {
   sha: string;
   authorLogin: string | null; // null when not linked to a GitHub account
   committerLogin: string | null;
+  message: string; // full commit message
 }
 
 /** A checkout of the PR head. Reserved for later classifiers; v1 never creates one. */

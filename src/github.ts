@@ -1,6 +1,7 @@
 // Every GitHub write hall-pass makes lives here. Classifiers never write.
 import type { getOctokit } from "@actions/github";
 import type { MergeMethod } from "./config.js";
+import { sameActor } from "./shared.js";
 
 export type Octokit = ReturnType<typeof getOctokit>;
 
@@ -27,12 +28,6 @@ const MERGEABLE_NOW = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
 
 export type AutoMergeOutcome = "enabled" | "already-on" | "merged" | "left-for-human";
 
-/** Bots show up as "slug[bot]" in REST and as "slug" in GraphQL. Compare on the slug. */
-export function sameActor(a: string | null | undefined, b: string | null | undefined): boolean {
-  if (!a || !b) return false;
-  const norm = (s: string) => s.toLowerCase().replace(/\[bot\]$/, "");
-  return norm(a) === norm(b);
-}
 
 function truncate(s: string): string {
   return s.length <= MAX_CHECK_TEXT ? s : s.slice(0, MAX_CHECK_TEXT) + "\n\n…truncated";

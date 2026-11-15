@@ -111,8 +111,10 @@ async function recentMergedNumbers(octokit: Octokit, owner: string, repo: string
 
 async function loadPr(octokit: Octokit, cache: Cache, owner: string, repo: string, number: number): Promise<Cached> {
   const hit = await cache.get<Cached>(`pr-${number}`);
-  // Merged PRs don't change, so a cache hit is good forever. Open PRs are refetched.
-  if (hit && hit.pull.merged_at) return hit;
+  // Merged PRs don't change, so a cache hit is good forever. Open PRs are
+  // refetched, and so are entries written before commits carried messages.
+  const complete = hit?.commits.every((c) => typeof c.message === "string") ?? false;
+  if (hit && hit.pull.merged_at && complete) return hit;
   const { data: pull } = await withBackoff(() => octokit.rest.pulls.get({ owner, repo, pull_number: number }), `#${number}`);
   const [files, commits] = await Promise.all([
     withBackoff(() => listFiles(octokit, owner, repo, number), `#${number} files`),

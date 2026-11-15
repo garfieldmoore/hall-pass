@@ -49,6 +49,7 @@ export async function listCommits(octokit: Octokit, owner: string, repo: string,
     sha: c.sha,
     authorLogin: c.author?.login ?? null,
     committerLogin: c.committer?.login ?? null,
+    message: c.commit.message,
   }));
 }
 

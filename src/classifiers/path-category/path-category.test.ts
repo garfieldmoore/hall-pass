@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { BEHAVIOURAL_DENY, pathCategory, pathCategoryConfigSchema } from "../../src/classifiers/path-category.js";
-import type { PrFile } from "../../src/types.js";
-import { added, docsOnly, modified, prContext, removed, renamed } from "../fixtures/context.js";
+import { BEHAVIOURAL_DENY, pathCategory, pathCategoryConfigSchema } from "./index.js";
+import type { PrFile } from "../../types.js";
+import { added, docsOnly, modified, prContext, removed, renamed } from "../../testing/pr-context.js";
 
 const cfg = pathCategoryConfigSchema.parse(docsOnly);
 const run = (files: PrFile[], c = cfg) => pathCategory.run(prContext({ files }), c);

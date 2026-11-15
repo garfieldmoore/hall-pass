@@ -1,4 +1,4 @@
-import type { PrContext, PrFile } from "../../src/types.js";
+import type { PrContext, PrFile } from "../types.js";
 
 /** A PrContext with sensible defaults; pass only what the test cares about. */
 export function prContext(overrides: Partial<PrContext> = {}): PrContext {

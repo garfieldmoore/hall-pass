@@ -139,21 +139,29 @@ export function decisionLine(d: Decision, dryRun: boolean): string {
   return `**${head}:** ${rest.join(": ")}${suffix}`;
 }
 
-export function runsTable(runs: ClassifierRun[]): string {
+/**
+ * The table of classifier runs. Timings go in the check run only: the sticky
+ * comment must be identical on every run of the same commit, or a re-run
+ * would edit it just because a classifier took 4 ms instead of 5.
+ */
+export function runsTable(runs: ClassifierRun[], { timings = false } = {}): string {
   if (runs.length === 0) return "_No classifiers ran._";
   const rows = runs.map((r) => {
     const { verdict, detail } = verdictText(r.verdict);
     const shownVerdict = r.error ? `error → ${r.mode === "active" ? "veto" : "ignored"}` : verdict;
-    return `| \`${r.id}\` | ${r.kind} | ${r.mode} | ${cell(shownVerdict)} | ${cell(r.error ?? detail)} | ${r.durationMs} ms |`;
+    const cells = [`\`${r.id}\``, r.kind, r.mode, cell(shownVerdict), cell(r.error ?? detail)];
+    if (timings) cells.push(`${r.durationMs} ms`);
+    return `| ${cells.join(" | ")} |`;
   });
-  return ["| Classifier | Kind | Mode | Verdict | Evidence | Time |", "|---|---|---|---|---|---|", ...rows].join("\n");
+  const head = ["Classifier", "Kind", "Mode", "Verdict", "Evidence", ...(timings ? ["Time"] : [])];
+  return [`| ${head.join(" | ")} |`, `|${head.map(() => "---").join("|")}|`, ...rows].join("\n");
 }
 
-export function report(d: Decision, dryRun: boolean): string {
+export function report(d: Decision, dryRun: boolean, { timings = false } = {}): string {
   const shadowNote = d.runs.some((r) => r.mode === "shadow")
     ? "\n\n_Shadow classifiers are reported but do not affect the decision._"
     : "";
-  return `${decisionLine(d, dryRun)}\n\n${runsTable(d.runs)}${shadowNote}`;
+  return `${decisionLine(d, dryRun)}\n\n${runsTable(d.runs, { timings })}${shadowNote}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -242,11 +250,11 @@ export async function runPullRequest(input: RunInput): Promise<RunOutcome> {
 
   // 6. Check run. Success means "the run completed", whatever the decision.
   let autoMerge: AutoMergeOutcome | undefined;
-  const body = report(decision, dryRun);
+  const body = report(decision, dryRun); // the comment: stable across re-runs
   const title = decisionText(decision);
 
   try {
-    await ops.completeCheckRun(checkId, "success", title, body);
+    await ops.completeCheckRun(checkId, "success", title, report(decision, dryRun, { timings: true }));
 
     let note = "";
     if (!dryRun) {
@@ -335,7 +343,7 @@ async function failRun(
       log.warning(`rollback failed: ${errorMessage(e)}`);
     }
   }
-  const summary = [message, ...rollback, decision ? `\n${report(decision, dryRun)}` : ""].filter(Boolean).join("\n\n");
+  const summary = [message, ...rollback, decision ? `\n${report(decision, dryRun, { timings: true })}` : ""].filter(Boolean).join("\n\n");
   try {
     await ops.completeCheckRun(checkId, "failure", "Error", summary);
   } catch (e) {

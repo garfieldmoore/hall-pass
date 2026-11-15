@@ -63,7 +63,7 @@ Some `.md` files are instructions that a model or GitHub acts on. Changing one c
 - agent `instructions.md` files
 - `.github/copilot-instructions.md` and PR templates
 
-`path-category` has a built-in deny list for these, `BEHAVIOURAL_DENY` in `src/classifiers/path-category.ts`. It applies to **every** category on top of the configured `deny`, it matches **case-insensitively** (so `skill.md`, `Skills.md` and `SKILL.md` all match), and **config can't turn it off**. A consumer's config can only make the classifier stricter. The list also covers `.github/**`, so workflow and template changes always go to a human.
+`path-category` has a built-in deny list for these, `BEHAVIOURAL_DENY` in `src/classifiers/path-category/index.ts`. It applies to **every** category on top of the configured `deny`, it matches **case-insensitively** (so `skill.md`, `Skills.md` and `SKILL.md` all match), and **config can't turn it off**. A consumer's config can only make the classifier stricter. The list also covers `.github/**`, so workflow and template changes always go to a human.
 
 | Covered | Globs |
 |---|---|
@@ -190,20 +190,11 @@ Unknown keys at any level are a config error.
 - `false` (default): the PR stays approved and the comment says a person needs to press merge.
 - `true`: hall-pass merges it directly, pinned to the head SHA it judged. Only turn this on once the ruleset requires your CI checks. A PR whose non-required checks are failing (`UNSTABLE`) is never merged directly.
 
-### `path-category`
+### Classifier settings
 
-```yaml
-path-category:
-  mode: shadow
-  categories:
-    <kebab-case-name>:
-      allow: [glob, ...]   # required, at least one
-      deny:  [glob, ...]   # optional
-```
+Each classifier documents its own settings in the README in its folder:
 
-A category is `eligible` when every changed path matches at least one `allow` glob, no `deny` glob and nothing on the built-in behavioural list. For renames, both the old and the new path are checked. With no changed files, or when no category matches, the result is `abstain`, and the note lists which files kept the PR out of each category. When several categories match, the first in config order is the `category` and the rest are listed in `evidence`.
-
-Globs use [picomatch](https://github.com/micromatch/picomatch) with `dot: true`. `allow` is case-sensitive. `deny` and the built-in list are case-insensitive.
+- [`path-category`](src/classifiers/path-category/README.md)
 
 ## Backtest
 
@@ -233,12 +224,40 @@ jq -r '.results[] | select(.runs[].verdict.note // "" | contains("behavioural"))
 
 ## Adding a classifier
 
-1. Write `src/classifiers/<id>.ts` exporting a `Classifier<Cfg>`, with an `id`, a `kind`, a `description`, a zod `configSchema` and `run(ctx, cfg)`. Classifiers are pure. They do no GitHub writes and keep no state.
+Each classifier is a folder under `src/classifiers/`, holding its code, its tests and its docs:
+
+```
+src/classifiers/<id>/
+  index.ts          # exports a Classifier<Cfg>
+  <id>.test.ts      # its tests, next to the code
+  README.md         # what it checks, its config, any built-in rules
+```
+
+1. Create the folder. `index.ts` exports a `Classifier<Cfg>`, with an `id`, a `kind`, a `description`, a zod `configSchema` and `run(ctx, cfg)`. Classifiers are pure. They do no GitHub writes and keep no state.
 2. Import it in `src/classifiers/index.ts` and add it to the array. Nothing else changes: `src/types.ts` is the contract.
-3. Add `test/classifiers/<id>.test.ts`, including cases that must **not** qualify, or must veto.
-4. Ship it, add it to a consumer's config in `shadow` mode, backtest, then switch it to `active`.
+3. Write `<id>.test.ts`, including cases that must **not** qualify, or must veto. Build PR contexts with the helpers in `src/testing/`.
+4. Write `README.md` with its config and behaviour, and link it from [Classifier settings](#classifier-settings).
+5. Ship it, add it to a consumer's config in `shadow` mode, backtest, then switch it to `active`.
 
 For example, a veto classifier `agent-instructions` could fetch each changed `.md` file's content from the API at the head SHA. It would veto files whose YAML frontmatter has `name:` and `description:`, which is how skill files are shaped, or which say things like "You are…" or "When the user asks…". That covers behavioural markdown kept outside the usual paths. It would need its own read of file contents, which is fine because it reads through the API and doesn't check the code out.
+
+## Repository layout
+
+Tests sit next to the code they test, everywhere:
+
+```
+src/
+  main.ts, backtest.ts     # entry points (bundled into dist/)
+  runner.ts, runner.test.ts
+  config.ts, config.test.ts
+  context.ts, github.ts, types.ts
+  classifiers/
+    index.ts               # the registry
+    <id>/                  # one folder per classifier: index.ts, <id>.test.ts, README.md
+  testing/                 # shared test helpers: PR context builders, a fake Octokit, configs
+```
+
+`src/testing/` is for tests only. ESLint blocks importing it from non-test code, so it never reaches the bundle. Test files themselves aren't bundled either: esbuild only follows imports from `main.ts` and `backtest.ts`.
 
 ## Developing and releasing
 
@@ -272,6 +291,7 @@ npm run check   # lint, type check, tests, build
 - **Truncated file lists.** The files API stops at 3000 files. If the PR reports more changed files than the API returned, that's a runtime error: no classifier judges part of a PR.
 - **Fresh PR data.** The Action re-reads the PR from the API rather than trusting the event payload, which may be stale by the time a queued job starts.
 - **"Last N merged" in the backtest.** The list API can't sort by merge time, so the backtest walks closed PRs by last update and keeps merged ones. PRs edited after merging can be slightly out of order.
+- **Tests next to code.** Every module's tests sit beside it (`*.test.ts`), and each classifier is a folder holding its code, tests and README. This departs from the brief's separate `test/` tree; it keeps a classifier's rules, tests and docs in one place.
 - **Runtime and bundle.** `node24` is the newest runtime GitHub Actions supports. The bundle is ESM built by esbuild. The workflow uses `actions/create-github-app-token@v3`, the current major.
 
 ## Accepted risks

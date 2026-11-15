@@ -14,4 +14,15 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
   },
+  {
+    // Shared test helpers must never end up in the bundle.
+    files: ["src/**/*.ts"],
+    ignores: ["src/**/*.test.ts", "src/testing/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        { patterns: [{ group: ["**/testing/*", "./testing/*", "../testing/*"], message: "src/testing is for tests only." }] },
+      ],
+    },
+  },
 );

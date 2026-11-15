@@ -1,7 +1,7 @@
 // An in-memory stand-in for the slice of Octokit hall-pass uses. It keeps
 // PR state (reviews, comments, labels, auto-merge, check runs) so tests can
 // assert on the end state and on idempotency. No network.
-import type { Octokit } from "../../src/github.js";
+import type { Octokit } from "../github.js";
 
 export const BOT = "merge-bot[bot]";
 

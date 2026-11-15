@@ -1,0 +1,55 @@
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Verify the build
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run lint
+          npm run typecheck
+          npm test
+          npm run build
+          if [ -n "$(git status --porcelain -- dist)" ]; then
+            echo "::error::dist/ at $GITHUB_REF_NAME does not match its source. Rebuild, commit, and tag again."
+            exit 1
+          fi
+
+      - name: Tag must be on main
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "::error::$GITHUB_REF_NAME is not on main. Release only reviewed, merged commits."
+            exit 1
+          }
+
+      - name: Create the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
+
+      - name: Move the major tag
+        run: |
+          set -euo pipefail
+          major="${GITHUB_REF_NAME%%.*}"   # v1.2.3 -> v1
+          git tag -f "$major" "$GITHUB_SHA"
+          git push -f origin "refs/tags/$major"
+          echo "Moved $major to $GITHUB_SHA"

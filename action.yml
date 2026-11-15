@@ -1,0 +1,28 @@
+name: hall-pass
+description: Classifies pull requests and approves and auto-merges the low-risk ones.
+author: garfieldmoore
+
+inputs:
+  github-token:
+    description: merge-bot GitHub App installation token (from actions/create-github-app-token).
+    required: true
+  config:
+    description: Path to the config file, read from the PR's base commit.
+    required: false
+    default: .github/hall-pass.yml
+  dry-run:
+    description: Report only (check run and comment); take no label, approval or auto-merge actions.
+    required: false
+    default: "false"
+
+outputs:
+  eligible:
+    description: "true or false: whether the PR qualifies for auto-merge."
+  categories:
+    description: JSON array of qualifying categories.
+  decision:
+    description: The full Decision as JSON.
+
+runs:
+  using: node24
+  main: dist/index.js

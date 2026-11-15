@@ -1,0 +1,6 @@
+node_modules/
+coverage/
+.backtest-cache/
+report.json
+report.csv
+*.log

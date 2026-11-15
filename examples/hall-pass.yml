@@ -1,0 +1,25 @@
+# Copy to .github/hall-pass.yml in the consumer repo.
+version: 1
+
+actions:
+  approve: true          # merge-bot approves qualifying PRs
+  autoMerge: true        # turn on GitHub auto-merge for qualifying PRs
+  mergeMethod: squash    # squash | merge | rebase
+  labels: true           # apply hall-pass:<category> labels
+  comment: true          # sticky summary comment
+
+classifiers:
+  path-category:
+    mode: shadow         # switch to active after reviewing a backtest
+    categories:
+      docs-only:
+        allow: ["docs/**", "adr/**", "**/*.md", "**/*.mdx"]
+        # Behavioural markdown (SKILL.md, CLAUDE.md, AGENTS.md, .claude/, .cursor/,
+        # prompts, agent instructions, .github/ …) is denied by a built-in list
+        # that config cannot switch off. Add repo-specific paths here.
+        deny:
+          - ".github/**"
+          - "**/CLAUDE.md"
+          - "**/AGENTS.md"
+          - "**/prompts/**"
+          - "**/CHANGELOG.md"

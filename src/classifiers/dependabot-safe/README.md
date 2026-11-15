@@ -1,0 +1,63 @@
+# dependabot-safe
+
+**Kind:** eligibility. **Results:** `eligible` (category `dependabot-safe`) or `abstain`.
+
+Qualifies Dependabot updates that are entirely Dependabot's work, where every updated dependency passes the configured rules, and that touch only manifests and lockfiles.
+
+It decides from three things only:
+- the `updated-dependencies` metadata block Dependabot writes into every commit message
+- who authored and committed each commit, and who opened the PR
+- which files changed
+
+Labels, PR titles and anything else a person can edit are ignored.
+
+## Rules
+
+It returns `eligible` only when **all** of these hold. Otherwise it returns `abstain`, and the note lists every reason that failed (up to 10, then "…and N more").
+
+1. The PR author is in `botLogins`.
+2. The head branch starts with `branchPrefix`.
+3. Every commit's **author** is in `botLogins`. A commit with no GitHub login fails.
+4. Every commit's **committer** is in `botLogins` or `allowedCommitters`. A commit with no GitHub login fails. Dependabot's commits are committed by `web-flow`, GitHub's signing identity.
+5. Every commit message has a parseable `updated-dependencies` block, and together they list at least one dependency.
+6. Every listed dependency:
+   - has an `update-type` in `allowedUpdateTypes` (a missing `update-type` fails)
+   - has a name that doesn't match `denyPackages` (globs, so `@apollo/*` works)
+   - when `allowPreOneZero` is `false`, has a `dependency-version` that doesn't start with `0.` (a missing version fails)
+7. Every changed path, both ends of a rename, matches `allowedFiles` (case-sensitive).
+8. No changed path matches the built-in behavioural deny list (case-insensitive, not configurable). So Dependabot's GitHub Actions updates under `.github/` can never qualify.
+9. At least one file changed.
+
+Logins are compared the same way as everywhere else in hall-pass: case-insensitively, ignoring a trailing `[bot]`.
+
+Grouped updates list several dependencies in one block, and every one must pass. Security updates carry the same metadata and follow the same rules.
+
+## Config
+
+```yaml
+dependabot-safe:
+  mode: shadow
+  botLogins: ["dependabot[bot]"]                  # required, at least one
+  allowedCommitters: ["web-flow"]                 # default []
+  branchPrefix: "dependabot/"                     # required
+  allowedUpdateTypes: ["version-update:semver-patch"]   # required: semver-patch | semver-minor | semver-major
+  allowPreOneZero: false                          # default false
+  denyPackages: ["@apollo/*", "graphql"]          # default []; globs
+  allowedFiles: ["**/package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"]  # required
+```
+
+Unknown keys are a config error.
+
+## Evidence
+
+Each dependency appears once, for example `lodash → 4.17.21 (semver-patch, direct:production)`. Grouped monorepo updates repeat the same entry once per manifest, so duplicates are dropped.
+
+## Parsing the metadata
+
+`parseDependabotMetadata(message)` in [`metadata.ts`](metadata.ts) finds the block between a `---` line followed by `updated-dependencies:`, and the closing `...` line. It parses the block with YAML's failsafe schema, so every value stays a string and a version like `1.10` isn't read as `1.1`, then validates the entries with zod. Unknown extra keys are allowed, because Dependabot adds fields over time. It returns the dependencies or an error, and never throws.
+
+## Tests
+
+- [`metadata.test.ts`](metadata.test.ts): the parser.
+- [`dependabot-safe.test.ts`](dependabot-safe.test.ts): every rule, both eligible and abstain, plus config errors.
+- `src/runner.test.ts`: the classifier running alongside `path-category`.

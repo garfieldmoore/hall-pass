@@ -20782,7 +20782,7 @@ var require_parse2 = __commonJS({
       }
       return { risky: false };
     };
-    var parse6 = (input2, options) => {
+    var parse7 = (input2, options) => {
       if (typeof input2 !== "string") {
         throw new TypeError("Expected a string");
       }
@@ -20952,7 +20952,7 @@ var require_parse2 = __commonJS({
             output2 = token.close = `)$))${extglobStar}`;
           }
           if (token.inner.includes("*") && (rest = remaining()) && /^\.[^\\/.]+$/.test(rest)) {
-            const expression = parse6(rest, { ...options, fastpaths: false }).output;
+            const expression = parse7(rest, { ...options, fastpaths: false }).output;
             output2 = token.close = `)${expression})${extglobStar})`;
           }
           if (token.prev.type === "bos") {
@@ -21475,7 +21475,7 @@ var require_parse2 = __commonJS({
       }
       return state;
     };
-    parse6.fastpaths = (input2, options) => {
+    parse7.fastpaths = (input2, options) => {
       const opts = { ...options };
       const max = typeof opts.maxLength === "number" ? Math.min(MAX_LENGTH, opts.maxLength) : MAX_LENGTH;
       const len = input2.length;
@@ -21540,7 +21540,7 @@ var require_parse2 = __commonJS({
       }
       return source;
     };
-    module.exports = parse6;
+    module.exports = parse7;
   }
 });
 
@@ -21549,13 +21549,13 @@ var require_picomatch = __commonJS({
   "node_modules/picomatch/lib/picomatch.js"(exports, module) {
     "use strict";
     var scan = require_scan();
-    var parse6 = require_parse2();
+    var parse7 = require_parse2();
     var utils = require_utils2();
     var constants = require_constants6();
     var isObject2 = (val) => val && typeof val === "object" && !Array.isArray(val);
-    var picomatch2 = (glob2, options, returnState = false) => {
+    var picomatch3 = (glob2, options, returnState = false) => {
       if (Array.isArray(glob2)) {
-        const fns = glob2.map((input2) => picomatch2(input2, options, returnState));
+        const fns = glob2.map((input2) => picomatch3(input2, options, returnState));
         const arrayMatcher = (str) => {
           for (const isMatch of fns) {
             const state2 = isMatch(str);
@@ -21571,16 +21571,16 @@ var require_picomatch = __commonJS({
       }
       const opts = options || {};
       const posix = opts.windows;
-      const regex = isState ? picomatch2.compileRe(glob2, options) : picomatch2.makeRe(glob2, options, false, true);
+      const regex = isState ? picomatch3.compileRe(glob2, options) : picomatch3.makeRe(glob2, options, false, true);
       const state = regex.state;
       delete regex.state;
       let isIgnored = () => false;
       if (opts.ignore) {
         const ignoreOpts = { ...options, ignore: null, onMatch: null, onResult: null };
-        isIgnored = picomatch2(opts.ignore, ignoreOpts, returnState);
+        isIgnored = picomatch3(opts.ignore, ignoreOpts, returnState);
       }
       const matcher = (input2, returnObject = false) => {
-        const { isMatch, match, output: output2 } = picomatch2.test(input2, regex, options, { glob: glob2, posix });
+        const { isMatch, match, output: output2 } = picomatch3.test(input2, regex, options, { glob: glob2, posix });
         const result = { glob: glob2, state, regex, posix, input: input2, output: output2, match, isMatch };
         if (typeof opts.onResult === "function") {
           opts.onResult(result);
@@ -21606,7 +21606,7 @@ var require_picomatch = __commonJS({
       }
       return matcher;
     };
-    picomatch2.test = (input2, regex, options, { glob: glob2, posix } = {}) => {
+    picomatch3.test = (input2, regex, options, { glob: glob2, posix } = {}) => {
       if (typeof input2 !== "string") {
         throw new TypeError("Expected input to be a string");
       }
@@ -21623,24 +21623,24 @@ var require_picomatch = __commonJS({
       }
       if (match === false || opts.capture === true) {
         if (opts.matchBase === true || opts.basename === true) {
-          match = picomatch2.matchBase(input2, regex, options, posix);
+          match = picomatch3.matchBase(input2, regex, options, posix);
         } else {
           match = regex.exec(output2);
         }
       }
       return { isMatch: Boolean(match), match, output: output2 };
     };
-    picomatch2.matchBase = (input2, glob2, options, posix = options && options.windows) => {
-      const regex = glob2 instanceof RegExp ? glob2 : picomatch2.makeRe(glob2, options);
+    picomatch3.matchBase = (input2, glob2, options, posix = options && options.windows) => {
+      const regex = glob2 instanceof RegExp ? glob2 : picomatch3.makeRe(glob2, options);
       return regex.test(utils.basename(input2, { windows: posix }));
     };
-    picomatch2.isMatch = (str, patterns, options) => picomatch2(patterns, options)(str);
-    picomatch2.parse = (pattern, options) => {
-      if (Array.isArray(pattern)) return pattern.map((p) => picomatch2.parse(p, options));
-      return parse6(pattern, { ...options, fastpaths: false });
+    picomatch3.isMatch = (str, patterns, options) => picomatch3(patterns, options)(str);
+    picomatch3.parse = (pattern, options) => {
+      if (Array.isArray(pattern)) return pattern.map((p) => picomatch3.parse(p, options));
+      return parse7(pattern, { ...options, fastpaths: false });
     };
-    picomatch2.scan = (input2, options) => scan(input2, options);
-    picomatch2.compileRe = (state, options, returnOutput = false, returnState = false) => {
+    picomatch3.scan = (input2, options) => scan(input2, options);
+    picomatch3.compileRe = (state, options, returnOutput = false, returnState = false) => {
       if (returnOutput === true) {
         return state.output;
       }
@@ -21651,26 +21651,26 @@ var require_picomatch = __commonJS({
       if (state && state.negated === true) {
         source = `^(?!${source}).*$`;
       }
-      const regex = picomatch2.toRegex(source, options);
+      const regex = picomatch3.toRegex(source, options);
       if (returnState === true) {
         regex.state = state;
       }
       return regex;
     };
-    picomatch2.makeRe = (input2, options = {}, returnOutput = false, returnState = false) => {
+    picomatch3.makeRe = (input2, options = {}, returnOutput = false, returnState = false) => {
       if (!input2 || typeof input2 !== "string") {
         throw new TypeError("Expected a non-empty string");
       }
       let parsed = { negated: false, fastpaths: true };
       if (options.fastpaths !== false && (input2[0] === "." || input2[0] === "*")) {
-        parsed.output = parse6.fastpaths(input2, options);
+        parsed.output = parse7.fastpaths(input2, options);
       }
       if (!parsed.output) {
-        parsed = parse6(input2, options);
+        parsed = parse7(input2, options);
       }
-      return picomatch2.compileRe(parsed, options, returnOutput, returnState);
+      return picomatch3.compileRe(parsed, options, returnOutput, returnState);
     };
-    picomatch2.toRegex = (source, options) => {
+    picomatch3.toRegex = (source, options) => {
       try {
         const opts = options || {};
         return new RegExp(source, opts.flags || (opts.nocase ? "i" : ""));
@@ -21679,8 +21679,8 @@ var require_picomatch = __commonJS({
         return /$^/;
       }
     };
-    picomatch2.constants = constants;
-    module.exports = picomatch2;
+    picomatch3.constants = constants;
+    module.exports = picomatch3;
   }
 });
 
@@ -21690,14 +21690,14 @@ var require_picomatch2 = __commonJS({
     "use strict";
     var pico = require_picomatch();
     var utils = require_utils2();
-    function picomatch2(glob2, options, returnState = false) {
+    function picomatch3(glob2, options, returnState = false) {
       if (options && (options.windows === null || options.windows === void 0)) {
         options = { ...options, windows: utils.isWindows() };
       }
       return pico(glob2, options, returnState);
     }
-    Object.assign(picomatch2, pico);
-    module.exports = picomatch2;
+    Object.assign(picomatch3, pico);
+    module.exports = picomatch3;
   }
 });
 
@@ -28931,7 +28931,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse6(src, reviver, options) {
+    function parse7(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -28972,7 +28972,7 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse6;
+    exports.parse = parse7;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument;
     exports.stringify = stringify;
@@ -33201,7 +33201,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
-// src/classifiers/path-category/index.ts
+// src/classifiers/dependabot-safe/index.ts
 var import_picomatch = __toESM(require_picomatch2(), 1);
 
 // node_modules/zod/v4/classic/external.js
@@ -35062,18 +35062,18 @@ var validateAsync = async (schema, value, _ctx) => {
   return result.issues.length === 0;
 };
 var _encode = (_Err) => {
-  const parse6 = _parse(_Err);
+  const parse7 = _parse(_Err);
   const fn = (schema, value, _ctx, _params) => {
     const ctx = _ctx ? { ..._ctx, direction: "backward" } : { direction: "backward" };
-    return parse6(schema, value, ctx, finalizeParams(fn, _params));
+    return parse7(schema, value, ctx, finalizeParams(fn, _params));
   };
   return fn;
 };
 var encode = /* @__PURE__ */ _encode($ZodRealError);
 var _decode = (_Err) => {
-  const parse6 = _parse(_Err);
+  const parse7 = _parse(_Err);
   const fn = (schema, value, _ctx, _params) => {
-    return parse6(schema, value, _ctx, finalizeParams(fn, _params));
+    return parse7(schema, value, _ctx, finalizeParams(fn, _params));
   };
   return fn;
 };
@@ -36568,7 +36568,7 @@ function capSize(inst, size) {
   if (!caps.length)
     return;
   const cap = Math.min(...caps.map((c) => c[0]));
-  const parse6 = inst._zod.parse;
+  const parse7 = inst._zod.parse;
   inst._zod.parse = (payload, ctx) => {
     const n = size(payload.value);
     if (n > cap && !ctx?.skipChecks && ctx?.direction !== "backward") {
@@ -36582,7 +36582,7 @@ function capSize(inst, size) {
         }
       }
     }
-    return parse6(payload, ctx);
+    return parse7(payload, ctx);
   };
 }
 var arraySize = (input2) => Array.isArray(input2) ? input2.length : -1;
@@ -52921,7 +52921,12 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 
-// src/classifiers/path-category/index.ts
+// src/shared.ts
+function sameActor(a, b) {
+  if (!a || !b) return false;
+  const norm = (s) => s.toLowerCase().replace(/\[bot\]$/, "");
+  return norm(a) === norm(b);
+}
 var BEHAVIOURAL_DENY = [
   // GitHub workflows, actions, templates, CODEOWNERS, copilot-instructions.md
   ".github/**",
@@ -52966,6 +52971,136 @@ var BEHAVIOURAL_DENY = [
   "**/.openclaw/**",
   "**/.aider*"
 ];
+
+// src/classifiers/dependabot-safe/metadata.ts
+var import_yaml = __toESM(require_dist(), 1);
+var entrySchema = external_exports.looseObject({
+  "dependency-name": external_exports.string().min(1),
+  "dependency-version": external_exports.string().optional(),
+  "dependency-type": external_exports.string().optional(),
+  "update-type": external_exports.string().optional()
+});
+var blockSchema = external_exports.looseObject({ "updated-dependencies": external_exports.array(entrySchema) });
+function extractBlock(message) {
+  const lines = message.split(/\r?\n/);
+  for (let i = 0; i < lines.length - 1; i++) {
+    if (lines[i]?.trim() !== "---" || !/^updated-dependencies:/.test(lines[i + 1] ?? "")) continue;
+    const end = lines.findIndex((l, j) => j > i + 1 && l.trim() === "...");
+    if (end === -1) return null;
+    return lines.slice(i + 1, end).join("\n");
+  }
+  return null;
+}
+function parseDependabotMetadata(message) {
+  try {
+    const block = extractBlock(message);
+    if (block === null) return { ok: false, error: "no updated-dependencies block" };
+    let raw;
+    try {
+      raw = (0, import_yaml.parse)(block, { schema: "failsafe" });
+    } catch (e) {
+      return { ok: false, error: `metadata is not valid YAML: ${e.message.split("\n")[0]}` };
+    }
+    const parsed = blockSchema.safeParse(raw);
+    if (!parsed.success) {
+      const issue2 = parsed.error.issues[0];
+      return { ok: false, error: `metadata is malformed: ${issue2 ? `${issue2.path.join(".")}: ${issue2.message}` : "invalid"}` };
+    }
+    return {
+      ok: true,
+      dependencies: parsed.data["updated-dependencies"].map((d) => {
+        const dep = { name: d["dependency-name"] };
+        if (d["dependency-version"] !== void 0) dep.version = d["dependency-version"];
+        if (d["dependency-type"] !== void 0) dep.type = d["dependency-type"];
+        if (d["update-type"] !== void 0) dep.updateType = d["update-type"];
+        return dep;
+      })
+    };
+  } catch (e) {
+    return { ok: false, error: `could not read metadata: ${e instanceof Error ? e.message : String(e)}` };
+  }
+}
+
+// src/classifiers/dependabot-safe/index.ts
+var UPDATE_TYPES = [
+  "version-update:semver-patch",
+  "version-update:semver-minor",
+  "version-update:semver-major"
+];
+var dependabotSafeConfigSchema = external_exports.strictObject({
+  botLogins: external_exports.array(external_exports.string().min(1)).min(1),
+  allowedCommitters: external_exports.array(external_exports.string().min(1)).default([]),
+  branchPrefix: external_exports.string().min(1),
+  allowedUpdateTypes: external_exports.array(external_exports.enum(UPDATE_TYPES)).min(1),
+  allowPreOneZero: external_exports.boolean().default(false),
+  denyPackages: external_exports.array(external_exports.string().min(1)).default([]),
+  allowedFiles: external_exports.array(external_exports.string().min(1)).min(1)
+});
+var CATEGORY = "dependabot-safe";
+var MAX_LISTED = 10;
+var short = (sha) => sha.slice(0, 7);
+var inList = (login, list) => login !== null && list.some((l) => sameActor(login, l));
+function pathsOf(f) {
+  return f.previousPath && f.previousPath !== f.path ? [f.previousPath, f.path] : [f.path];
+}
+function describe3(d) {
+  const kind = [d.updateType?.replace(/^version-update:/, ""), d.type].filter(Boolean).join(", ");
+  return `${d.name} \u2192 ${d.version ?? "?"}${kind ? ` (${kind})` : ""}`;
+}
+var dependabotSafe = {
+  id: "dependabot-safe",
+  kind: "eligibility",
+  description: "Eligible when the PR is entirely Dependabot's work, every updated dependency passes the configured rules, and only manifests and lockfiles change.",
+  configSchema: dependabotSafeConfigSchema,
+  async run(ctx, cfg) {
+    const reasons = [];
+    const bots = cfg.botLogins;
+    const committers = [...cfg.botLogins, ...cfg.allowedCommitters];
+    if (!inList(ctx.author, bots)) reasons.push(`PR author ${ctx.author || "(unknown)"} is not a Dependabot login`);
+    if (!ctx.headRef.startsWith(cfg.branchPrefix)) reasons.push(`branch ${ctx.headRef} does not start with ${cfg.branchPrefix}`);
+    const deps = [];
+    if (ctx.commits.length === 0) reasons.push("no commits");
+    for (const c of ctx.commits) {
+      if (c.authorLogin === null) reasons.push(`commit ${short(c.sha)}: author has no GitHub login`);
+      else if (!inList(c.authorLogin, bots)) reasons.push(`commit ${short(c.sha)}: authored by ${c.authorLogin}`);
+      if (c.committerLogin === null) reasons.push(`commit ${short(c.sha)}: committer has no GitHub login`);
+      else if (!inList(c.committerLogin, committers)) reasons.push(`commit ${short(c.sha)}: committed by ${c.committerLogin}`);
+      const meta3 = parseDependabotMetadata(c.message);
+      if (!meta3.ok) reasons.push(`commit ${short(c.sha)}: ${meta3.error}`);
+      else deps.push(...meta3.dependencies);
+    }
+    if (ctx.commits.length > 0 && deps.length === 0 && !reasons.some((r) => r.includes("updated-dependencies") || r.includes("metadata"))) {
+      reasons.push("metadata lists no dependencies");
+    }
+    const denied = cfg.denyPackages.length ? (0, import_picomatch.default)(cfg.denyPackages, { dot: true }) : () => false;
+    const allowedTypes = new Set(cfg.allowedUpdateTypes);
+    for (const d of deps) {
+      if (d.updateType === void 0) reasons.push(`${d.name}: no update-type`);
+      else if (!allowedTypes.has(d.updateType)) reasons.push(`${d.name}: ${d.updateType} is not allowed`);
+      if (denied(d.name)) reasons.push(`${d.name}: package is denied`);
+      if (!cfg.allowPreOneZero) {
+        if (d.version === void 0) reasons.push(`${d.name}: no dependency-version`);
+        else if (d.version.startsWith("0.")) reasons.push(`${d.name}: ${d.version} is pre-1.0`);
+      }
+    }
+    if (ctx.files.length === 0) reasons.push("no changed files");
+    const allowed = (0, import_picomatch.default)(cfg.allowedFiles, { dot: true });
+    const behavioural = (0, import_picomatch.default)([...BEHAVIOURAL_DENY], { dot: true, nocase: true });
+    for (const p of ctx.files.flatMap(pathsOf)) {
+      if (behavioural(p)) reasons.push(`${p}: behavioural file (built-in deny)`);
+      else if (!allowed(p)) reasons.push(`${p}: not in allowedFiles`);
+    }
+    if (reasons.length) {
+      const shown = reasons.slice(0, MAX_LISTED);
+      const more = reasons.length - shown.length;
+      return { result: "abstain", note: `${shown.join("; ")}${more > 0 ? `; \u2026and ${more} more` : ""}` };
+    }
+    return { result: "eligible", category: CATEGORY, evidence: [...new Set(deps.map(describe3))] };
+  }
+};
+
+// src/classifiers/path-category/index.ts
+var import_picomatch2 = __toESM(require_picomatch2(), 1);
 var glob = external_exports.string().min(1);
 var categorySchema = external_exports.strictObject({
   allow: external_exports.array(glob).min(1),
@@ -52977,18 +53112,18 @@ var pathCategoryConfigSchema = external_exports.strictObject({
     "at least one category is required"
   )
 });
-var MAX_LISTED = 10;
+var MAX_LISTED2 = 10;
 function compile2(name, allow, deny) {
   return {
     name,
     // Allow is case-sensitive: an allow glob should never match more than it says.
-    allow: (0, import_picomatch.default)(allow, { dot: true }),
+    allow: (0, import_picomatch2.default)(allow, { dot: true }),
     // Denies are case-insensitive: when in doubt, deny.
-    deny: deny.length ? (0, import_picomatch.default)(deny, { dot: true, nocase: true }) : () => false,
-    behavioural: (0, import_picomatch.default)([...BEHAVIOURAL_DENY], { dot: true, nocase: true })
+    deny: deny.length ? (0, import_picomatch2.default)(deny, { dot: true, nocase: true }) : () => false,
+    behavioural: (0, import_picomatch2.default)([...BEHAVIOURAL_DENY], { dot: true, nocase: true })
   };
 }
-function pathsOf(f) {
+function pathsOf2(f) {
   return f.previousPath && f.previousPath !== f.path ? [f.previousPath, f.path] : [f.path];
 }
 function rejection(cat, path) {
@@ -53004,7 +53139,7 @@ var pathCategory = {
   configSchema: pathCategoryConfigSchema,
   async run(ctx, cfg) {
     if (ctx.files.length === 0) return { result: "abstain", note: "no changed files" };
-    const paths = ctx.files.flatMap(pathsOf);
+    const paths = ctx.files.flatMap(pathsOf2);
     const matched = [];
     const reasons = [];
     for (const [name, c] of Object.entries(cfg.categories)) {
@@ -53013,7 +53148,7 @@ var pathCategory = {
       if (rejected.length === 0) {
         matched.push(name);
       } else {
-        const shown = rejected.slice(0, MAX_LISTED);
+        const shown = rejected.slice(0, MAX_LISTED2);
         const more = rejected.length - shown.length;
         reasons.push(`${name}: ${shown.join("; ")}${more > 0 ? `; \u2026and ${more} more` : ""}`);
       }
@@ -53027,10 +53162,10 @@ var pathCategory = {
 };
 
 // src/classifiers/index.ts
-var classifiers = [pathCategory];
+var classifiers = [pathCategory, dependabotSafe];
 
 // src/config.ts
-var import_yaml = __toESM(require_dist(), 1);
+var import_yaml2 = __toESM(require_dist(), 1);
 var modeSchema = external_exports.enum(["active", "shadow", "off"]);
 var actionsSchema = external_exports.strictObject({
   // Approval and auto-merge default to off: a missing key never grants a write.
@@ -53067,7 +53202,7 @@ function formatZod(prefix, err) {
 function parseConfig(text, registry2) {
   let raw;
   try {
-    raw = (0, import_yaml.parse)(text);
+    raw = (0, import_yaml2.parse)(text);
   } catch (e) {
     return { kind: "error", message: `config is not valid YAML: ${e.message}` };
   }
@@ -53117,7 +53252,8 @@ async function listCommits(octokit, owner, repo, number4) {
   return raw.map((c) => ({
     sha: c.sha,
     authorLogin: c.author?.login ?? null,
-    committerLogin: c.committer?.login ?? null
+    committerLogin: c.committer?.login ?? null,
+    message: c.commit.message
   }));
 }
 async function buildPrContext(octokit, repo, pull, opts = {}) {
@@ -53274,7 +53410,8 @@ async function recentMergedNumbers(octokit, owner, repo, n) {
 }
 async function loadPr(octokit, cache, owner, repo, number4) {
   const hit = await cache.get(`pr-${number4}`);
-  if (hit && hit.pull.merged_at) return hit;
+  const complete = hit?.commits.every((c) => typeof c.message === "string") ?? false;
+  if (hit && hit.pull.merged_at && complete) return hit;
   const { data: pull } = await withBackoff(() => octokit.rest.pulls.get({ owner, repo, pull_number: number4 }), `#${number4}`);
   const [files, commits] = await Promise.all([
     withBackoff(() => listFiles(octokit, owner, repo, number4), `#${number4} files`),

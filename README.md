@@ -194,7 +194,48 @@ Unknown keys at any level are a config error.
 
 Each classifier documents its own settings in the README in its folder:
 
-- [`path-category`](src/classifiers/path-category/README.md)
+- [`path-category`](src/classifiers/path-category/README.md): eligibility. Paths only, for example docs-only.
+- [`dependabot-safe`](src/classifiers/dependabot-safe/README.md): eligibility. Dependabot updates that pass the configured rules, for example patch only.
+
+## Using with Dependabot
+
+`dependabot-safe` lets Dependabot updates qualify. Start it in shadow mode, like every classifier. Three things need setting up.
+
+### 1. A release-age delay
+
+Don't merge brand-new releases on day one; let a release age a few days first, so a compromised or broken release is likely to be noticed and pulled. Dependabot's `cooldown` option does this in `.github/dependabot.yml`:
+
+```yaml
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: "/"
+    schedule:
+      interval: daily
+    cooldown:
+      default-days: 3
+```
+
+Dependabot already applies a 3-day cooldown to version updates when `cooldown` isn't set. Setting it explicitly documents the choice and lets you lengthen it. Cooldown doesn't apply to **security** updates: those still arrive straight away. They follow the same `dependabot-safe` rules, so a security patch can merge without waiting.
+
+### 2. Secrets
+
+Workflows triggered by Dependabot PRs can't read normal Actions secrets, only **Dependabot secrets**. So the hall-pass workflow on a Dependabot PR can't see `MERGE_BOT_KEY` unless it's also stored as a Dependabot secret.
+
+- Add the App's private key as a **Dependabot secret** with the same name, `MERGE_BOT_KEY`: **Settings › Secrets and variables › Dependabot › New repository secret**, or the org-level equivalent.
+- GitHub's docs don't say whether Actions **variables** (`vars.MERGE_BOT_CLIENT_ID`) are readable in Dependabot-triggered runs. If they aren't, the token step fails with "client-id … must be set". The safe option is to store the Client ID as a Dependabot secret too, `MERGE_BOT_CLIENT_ID`, and let the workflow fall back to it:
+
+  ```yaml
+        - uses: actions/create-github-app-token@v3
+          id: app
+          with:
+            client-id: ${{ vars.MERGE_BOT_CLIENT_ID || secrets.MERGE_BOT_CLIENT_ID }}
+            private-key: ${{ secrets.MERGE_BOT_KEY }}
+  ```
+
+### 3. Rebases
+
+When Dependabot rebases its PR, the force-push dismisses the old approval, because the ruleset dismisses stale approvals, and hall-pass re-approves the new head. This needs no extra configuration.
 
 ## Backtest
 

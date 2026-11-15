@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { BEHAVIOURAL_DENY, pathCategory, pathCategoryConfigSchema } from "./index.js";
+import { BEHAVIOURAL_DENY } from "../../shared.js";
+import { pathCategory, pathCategoryConfigSchema } from "./index.js";
 import type { PrFile } from "../../types.js";
 import { added, docsOnly, modified, prContext, removed, renamed } from "../../testing/pr-context.js";
 

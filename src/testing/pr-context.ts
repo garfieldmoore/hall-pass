@@ -16,7 +16,7 @@ export function prContext(overrides: Partial<PrContext> = {}): PrContext {
     baseSha: "base0000",
     labels: [],
     files: [],
-    commits: [{ sha: "head0000", authorLogin: "dev", committerLogin: "dev" }],
+    commits: [{ sha: "head0000", authorLogin: "dev", committerLogin: "dev", message: "docs: update the guide" }],
     async workspace() {
       throw new Error("no workspace in tests");
     },

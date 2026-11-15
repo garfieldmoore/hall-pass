@@ -24,3 +24,15 @@ classifiers:
           - "**/AGENTS.md"
           - "**/prompts/**"
           - "**/CHANGELOG.md"
+
+  # Dependabot patch updates. Needs the App's key as a Dependabot secret too:
+  # see "Using with Dependabot" in the hall-pass README.
+  dependabot-safe:
+    mode: shadow
+    botLogins: ["dependabot[bot]"]
+    allowedCommitters: ["web-flow"]
+    branchPrefix: "dependabot/"
+    allowedUpdateTypes: ["version-update:semver-patch"]
+    allowPreOneZero: false
+    denyPackages: ["@apollo/*", "graphql"]
+    allowedFiles: ["**/package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"]

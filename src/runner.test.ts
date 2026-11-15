@@ -5,7 +5,7 @@ import { loadConfig, parseConfig, type ConfiguredClassifier } from "./config.js"
 import type { PullLike } from "./context.js";
 import { GitHubOps } from "./github.js";
 import { aggregate, decisionText, runClassifiers, runPullRequest } from "./runner.js";
-import type { Classifier, PrFile, Verdict } from "./types.js";
+import type { Classifier, PrContext, PrFile, Verdict } from "./types.js";
 import { added, modified, prContext } from "./testing/pr-context.js";
 import { DOCS_CONFIG } from "./testing/configs.js";
 import { BOT, fakeOctokit } from "./testing/fake-octokit.js";
@@ -160,6 +160,7 @@ interface Scenario {
   dryRun?: boolean;
   pull?: Partial<PullLike>;
   reg?: Classifier<unknown>[];
+  ctx?: Partial<PrContext>;
 }
 
 function setup(init: Parameters<typeof fakeOctokit>[0] = {}) {
@@ -178,7 +179,7 @@ function setup(init: Parameters<typeof fakeOctokit>[0] = {}) {
       ops: new GitHubOps(fake.octokit, repo),
       // The real loader, against the fake: proves config comes from the base SHA.
       loadConfig: (baseSha) => loadConfig(fake.octokit, repo, baseSha, ".github/hall-pass.yml", reg),
-      buildContext: async () => prContext({ files: sc.files ?? [modified("docs/guide.md")], headSha: p.head.sha }),
+      buildContext: async () => prContext({ files: sc.files ?? [modified("docs/guide.md")], headSha: p.head.sha, ...sc.ctx }),
       log: { info: (m) => logs.push(m), warning: (m) => logs.push(`WARN ${m}`) },
       timeoutMs: 50,
     });
@@ -503,5 +504,60 @@ describe("runPullRequest", () => {
     const t = setup({ reviews: [{ id: 1, user: { login: BOT }, state: "APPROVED", commit_id: "old", body: "" }] });
     await t.go();
     expect(t.state.reviews.filter((r) => r.commit_id === "head1")).toHaveLength(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// dependabot-safe alongside path-category, through the real registry
+// ---------------------------------------------------------------------------
+
+describe("dependabot-safe in the runner", () => {
+  const BOTH = (mode: string) => DOCS_CONFIG("active", `  dependabot-safe:
+    mode: ${mode}
+    botLogins: ["dependabot[bot]"]
+    allowedCommitters: ["web-flow"]
+    branchPrefix: "dependabot/"
+    allowedUpdateTypes: ["version-update:semver-patch"]
+    denyPackages: ["@apollo/*", "graphql"]
+    allowedFiles: ["**/package.json", "package-lock.json", "pnpm-lock.yaml", "yarn.lock"]
+`);
+  const dependabotCtx: Partial<PrContext> = {
+    author: "dependabot[bot]",
+    headRef: "dependabot/npm_and_yarn/lodash-4.17.21",
+    files: [modified("package.json"), modified("pnpm-lock.yaml")],
+    commits: [
+      {
+        sha: "abc1234",
+        authorLogin: "dependabot[bot]",
+        committerLogin: "web-flow",
+        message:
+          "Bump lodash\n\n---\nupdated-dependencies:\n- dependency-name: lodash\n  dependency-version: 4.17.21\n  dependency-type: direct:production\n  update-type: version-update:semver-patch\n...\n",
+      },
+    ],
+  };
+
+  it("active and eligible while path-category abstains: qualifies as dependabot-safe", async () => {
+    const t = setup();
+    const out = await t.go({ config: BOTH("active"), ctx: dependabotCtx });
+    expect(out.status === "decided" && out.decision).toMatchObject({ eligible: true, categories: ["dependabot-safe"] });
+    expect(t.state.labels).toEqual(["hall-pass:dependabot-safe"]);
+    expect(t.state.reviews[0]).toMatchObject({ state: "APPROVED", body: "Hall pass issued: dependabot-safe" });
+    expect(t.state.comments[0]?.body).toContain("| `path-category` | eligibility | active | abstain |");
+    expect(t.state.comments[0]?.body).toContain("lodash → 4.17.21 (semver-patch, direct:production)");
+  });
+
+  it("in shadow and eligible: doesn't qualify; the comment shows the shadow result", async () => {
+    const t = setup();
+    const out = await t.go({ config: BOTH("shadow"), ctx: dependabotCtx });
+    expect(out.status === "decided" && out.decision.eligible).toBe(false);
+    expect(t.state.reviews).toHaveLength(0);
+    expect(t.state.labels).toEqual([]);
+    expect(t.state.comments[0]?.body).toContain("| `dependabot-safe` | eligibility | shadow | eligible (dependabot-safe) |");
+  });
+
+  it("a docs PR still qualifies as docs-only with both configured", async () => {
+    const t = setup();
+    const out = await t.go({ config: BOTH("active") });
+    expect(out.status === "decided" && out.decision.categories).toEqual(["docs-only"]);
   });
 });

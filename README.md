@@ -105,7 +105,7 @@ Create the App, then:
 
 These steps assume an organisation. On a personal account, register the App under your own Developer settings and add the variable and secret to each consumer repo instead.
 
-1. Note the **App ID** shown on the App's page. Then go to **Org settings › Secrets and variables › Actions › Variables › New organization variable**. Name it `MERGE_BOT_APP_ID`, give it the App ID as its value, and grant access to the consumer repos.
+1. Note the **Client ID** shown on the App's page (it starts `Iv`). Then go to **Org settings › Secrets and variables › Actions › Variables › New organization variable**. Name it `MERGE_BOT_CLIENT_ID`, give it the Client ID as its value, and grant access to the consumer repos.
 2. On the App's page, **Generate a private key**. A `.pem` file downloads. Go to **Org settings › Secrets and variables › Actions › Secrets › New organization secret**. Name it `MERGE_BOT_KEY`, paste the whole `.pem` content, and limit **Repository access** to the consumer repos. Then delete the local `.pem`.
 3. Go to **Install App › your-org › Only select repositories**, pick the consumer repos only, and confirm.
 
@@ -153,7 +153,7 @@ jobs:
       - uses: actions/create-github-app-token@v3
         id: app
         with:
-          app-id: ${{ vars.MERGE_BOT_APP_ID }}
+          client-id: ${{ vars.MERGE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_BOT_KEY }}
       - uses: garfieldmoore/hall-pass@v1
         with:

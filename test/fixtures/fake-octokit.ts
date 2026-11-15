@@ -150,7 +150,13 @@ export function fakeOctokit(init: Partial<FakeState> = {}) {
     return (await method(params)).data;
   }
 
+  // Mirror @octokit/graphql: these keys are request options, not GraphQL
+  // variables. It rejects the first three outright and silently strips the rest.
+  const OCTOKIT_RESERVED = ["method", "baseUrl", "url", "headers", "request", "query", "mediaType", "operationName"];
+
   async function graphql(query: string, vars: Record<string, unknown> = {}) {
+    const clash = Object.keys(vars).find((k) => OCTOKIT_RESERVED.includes(k));
+    if (clash) throw new Error(`[@octokit/graphql] "${clash}" cannot be used as variable name`);
     if (query.includes("enablePullRequestAutoMerge")) {
       call("graphql.enableAutoMerge");
       s.autoMergeVars = vars;

@@ -443,7 +443,7 @@ describe("runPullRequest", () => {
   it("pins auto-merge to the head SHA (expectedHeadOid)", async () => {
     const t = setup();
     await t.go();
-    expect(t.state.autoMergeVars).toMatchObject({ head: "head1", method: "SQUASH" });
+    expect(t.state.autoMergeVars).toMatchObject({ head: "head1", mergeMethod: "SQUASH" });
   });
 
   it("already mergeable, mergeWhenClean off (default): approves but leaves the merge to a person", async () => {

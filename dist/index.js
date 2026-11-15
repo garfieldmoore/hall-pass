@@ -55610,12 +55610,14 @@ ${body}`;
     if (MERGEABLE_NOW.has(state.mergeStateStatus)) return mergeableNow(state.mergeStateStatus);
     try {
       await this.octokit.graphql(
-        `mutation($id: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) {
-          enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $method, expectedHeadOid: $head }) {
+        // Variable names must not collide with Octokit's request options
+        // (method, url, query, headers, ...): Octokit rejects or swallows them.
+        `mutation($id: ID!, $mergeMethod: PullRequestMergeMethod!, $head: GitObjectID!) {
+          enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $mergeMethod, expectedHeadOid: $head }) {
             pullRequest { number }
           }
         }`,
-        { id: state.pullRequestId, method: method.toUpperCase(), head: headSha }
+        { id: state.pullRequestId, mergeMethod: method.toUpperCase(), head: headSha }
       );
       return "enabled";
     } catch (e) {

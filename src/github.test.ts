@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { GitHubOps, MAX_CHECK_RUN_RETRIES } from "./github.js";
+import { GitHubOps, MAX_CHECK_RUN_RETRIES, checkRunRetryDelayMs } from "./github.js";
 import { fakeOctokit } from "./testing/fake-octokit.js";
 
 const repo = { owner: "example-org", name: "sandbox" };
@@ -22,8 +22,9 @@ async function complete(notYetVisible: number) {
 }
 
 describe("completeCheckRun retries a 404 on a just-created check run", () => {
-  it("retries 3 times, so 4 attempts at most", () => {
+  it("retries 3 times, so 4 attempts at most, waiting 0.5 s, 1.5 s and 4.5 s", () => {
     expect(MAX_CHECK_RUN_RETRIES).toBe(3);
+    expect([0, 1, 2].map(checkRunRetryDelayMs)).toEqual([500, 1500, 4500]);
   });
 
   it("succeeds on the last allowed attempt", async () => {

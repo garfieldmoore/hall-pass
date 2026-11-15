@@ -28,10 +28,10 @@ const MERGEABLE_NOW = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
 
 export type AutoMergeOutcome = "enabled" | "already-on" | "merged" | "left-for-human";
 
-/** Waits between retries when a just-created check run isn't visible yet (about 7 s in total). */
-export const CHECK_RUN_RETRY_DELAYS_MS = [500, 1500, 5000];
-/** Retries after the first attempt: one per delay above, so 4 attempts at most. */
-export const MAX_CHECK_RUN_RETRIES = CHECK_RUN_RETRY_DELAYS_MS.length;
+/** How many times to retry completing a just-created check run that answers 404 (4 attempts at most). */
+export const MAX_CHECK_RUN_RETRIES = 3;
+/** Wait before retry n (0-based): 0.5 s, 1.5 s, 4.5 s, so about 6.5 s in total. */
+export const checkRunRetryDelayMs = (retry: number) => 500 * 3 ** retry;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 
@@ -103,7 +103,7 @@ export class GitHubOps {
         const notYetVisible = (e as { status?: number }).status === 404;
         const retriesLeft = retry < MAX_CHECK_RUN_RETRIES;
         if (!notYetVisible || !retriesLeft) throw e;
-        await sleep(CHECK_RUN_RETRY_DELAYS_MS[retry] ?? 0);
+        await sleep(checkRunRetryDelayMs(retry));
       }
     }
   }

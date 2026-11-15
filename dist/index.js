@@ -55580,8 +55580,8 @@ var COMMENT_MARKER = "<!-- hall-pass -->";
 var LABEL_PREFIX = "hall-pass:";
 var MAX_CHECK_TEXT = 65e3;
 var MERGEABLE_NOW = /* @__PURE__ */ new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
-var CHECK_RUN_RETRY_DELAYS_MS = [500, 1500, 5e3];
-var MAX_CHECK_RUN_RETRIES = CHECK_RUN_RETRY_DELAYS_MS.length;
+var MAX_CHECK_RUN_RETRIES = 3;
+var checkRunRetryDelayMs = (retry) => 500 * 3 ** retry;
 var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function truncate(s) {
   return s.length <= MAX_CHECK_TEXT ? s : s.slice(0, MAX_CHECK_TEXT) + "\n\n\u2026truncated";
@@ -55645,7 +55645,7 @@ var GitHubOps = class {
         const notYetVisible = e.status === 404;
         const retriesLeft = retry < MAX_CHECK_RUN_RETRIES;
         if (!notYetVisible || !retriesLeft) throw e;
-        await sleep(CHECK_RUN_RETRY_DELAYS_MS[retry] ?? 0);
+        await sleep(checkRunRetryDelayMs(retry));
       }
     }
   }

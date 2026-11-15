@@ -224,6 +224,14 @@ describe("runPullRequest", () => {
     expect(t.state.getContentRefs).toEqual(["base1"]);
   });
 
+  it("the comment has no timings (so re-runs don't edit it); the check run does", async () => {
+    const t = setup();
+    await t.go();
+    expect(t.state.comments[0]?.body).not.toMatch(/\d+ ms/);
+    expect(t.state.comments[0]?.body).not.toContain("| Time |");
+    expect(t.state.checkRuns.at(-1)?.summary).toMatch(/\| \d+ ms \|/);
+  });
+
   it("running twice on the same commit: no duplicate approval, comment or label", async () => {
     const t = setup();
     await t.go();

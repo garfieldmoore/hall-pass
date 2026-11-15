@@ -55740,20 +55740,23 @@ function decisionLine(d, dryRun) {
   const [head, ...rest] = decisionText(d).split(": ");
   return `**${head}:** ${rest.join(": ")}${suffix}`;
 }
-function runsTable(runs) {
+function runsTable(runs, { timings = false } = {}) {
   if (runs.length === 0) return "_No classifiers ran._";
   const rows = runs.map((r) => {
     const { verdict, detail } = verdictText(r.verdict);
     const shownVerdict = r.error ? `error \u2192 ${r.mode === "active" ? "veto" : "ignored"}` : verdict;
-    return `| \`${r.id}\` | ${r.kind} | ${r.mode} | ${cell(shownVerdict)} | ${cell(r.error ?? detail)} | ${r.durationMs} ms |`;
+    const cells = [`\`${r.id}\``, r.kind, r.mode, cell(shownVerdict), cell(r.error ?? detail)];
+    if (timings) cells.push(`${r.durationMs} ms`);
+    return `| ${cells.join(" | ")} |`;
   });
-  return ["| Classifier | Kind | Mode | Verdict | Evidence | Time |", "|---|---|---|---|---|---|", ...rows].join("\n");
+  const head = ["Classifier", "Kind", "Mode", "Verdict", "Evidence", ...timings ? ["Time"] : []];
+  return [`| ${head.join(" | ")} |`, `|${head.map(() => "---").join("|")}|`, ...rows].join("\n");
 }
-function report(d, dryRun) {
+function report(d, dryRun, { timings = false } = {}) {
   const shadowNote = d.runs.some((r) => r.mode === "shadow") ? "\n\n_Shadow classifiers are reported but do not affect the decision._" : "";
   return `${decisionLine(d, dryRun)}
 
-${runsTable(d.runs)}${shadowNote}`;
+${runsTable(d.runs, { timings })}${shadowNote}`;
 }
 function logJson(log, fields) {
   log.info(JSON.stringify({ tool: "hall-pass", ts: (/* @__PURE__ */ new Date()).toISOString(), ...fields }));
@@ -55800,7 +55803,7 @@ Nothing was granted; any earlier approval or auto-merge from hall-pass was withd
   const body = report(decision, dryRun);
   const title = decisionText(decision);
   try {
-    await ops.completeCheckRun(checkId, "success", title, body);
+    await ops.completeCheckRun(checkId, "success", title, report(decision, dryRun, { timings: true }));
     let note = "";
     if (!dryRun) {
       if (config2.actions.labels) await ops.syncLabels(pull.number, decision.categories);
@@ -55865,7 +55868,7 @@ async function failRun(input2, checkId, message, where, decision) {
     }
   }
   const summary2 = [message, ...rollback, decision ? `
-${report(decision, dryRun)}` : ""].filter(Boolean).join("\n\n");
+${report(decision, dryRun, { timings: true })}` : ""].filter(Boolean).join("\n\n");
   try {
     await ops.completeCheckRun(checkId, "failure", "Error", summary2);
   } catch (e) {

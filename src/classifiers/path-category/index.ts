@@ -1,6 +1,6 @@
 import picomatch from "picomatch";
 import { z } from "zod";
-import type { Classifier, PrFile, Verdict } from "../types.js";
+import type { Classifier, PrFile, Verdict } from "../../types.js";
 
 /**
  * Markdown that changes behaviour rather than describing it: agent and

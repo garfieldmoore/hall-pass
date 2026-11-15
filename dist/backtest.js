@@ -33201,7 +33201,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
-// src/classifiers/path-category.ts
+// src/classifiers/path-category/index.ts
 var import_picomatch = __toESM(require_picomatch2(), 1);
 
 // node_modules/zod/v4/classic/external.js
@@ -52921,7 +52921,7 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 
-// src/classifiers/path-category.ts
+// src/classifiers/path-category/index.ts
 var BEHAVIOURAL_DENY = [
   // GitHub workflows, actions, templates, CODEOWNERS, copilot-instructions.md
   ".github/**",

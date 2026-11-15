@@ -35469,7 +35469,7 @@ function getOctokit(token, options, ...additionalPlugins) {
   return new GitHubWithPlugins(getOctokitOptions(token, options));
 }
 
-// src/classifiers/path-category.ts
+// src/classifiers/path-category/index.ts
 var import_picomatch = __toESM(require_picomatch2(), 1);
 
 // node_modules/zod/v4/classic/external.js
@@ -55189,7 +55189,7 @@ function date4(params) {
   return _coercedDate(ZodDate, params);
 }
 
-// src/classifiers/path-category.ts
+// src/classifiers/path-category/index.ts
 var BEHAVIOURAL_DENY = [
   // GitHub workflows, actions, templates, CODEOWNERS, copilot-instructions.md
   ".github/**",

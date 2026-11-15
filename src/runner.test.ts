@@ -1,14 +1,14 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { classifiers as registry } from "../src/classifiers/index.js";
-import { loadConfig, parseConfig, type ConfiguredClassifier } from "../src/config.js";
-import type { PullLike } from "../src/context.js";
-import { GitHubOps } from "../src/github.js";
-import { aggregate, decisionText, runClassifiers, runPullRequest } from "../src/runner.js";
-import type { Classifier, PrFile, Verdict } from "../src/types.js";
-import { added, modified, prContext } from "./fixtures/context.js";
-import { BOT, fakeOctokit } from "./fixtures/fake-octokit.js";
+import { classifiers as registry } from "./classifiers/index.js";
+import { loadConfig, parseConfig, type ConfiguredClassifier } from "./config.js";
+import type { PullLike } from "./context.js";
+import { GitHubOps } from "./github.js";
+import { aggregate, decisionText, runClassifiers, runPullRequest } from "./runner.js";
+import type { Classifier, PrFile, Verdict } from "./types.js";
+import { added, modified, prContext } from "./testing/pr-context.js";
+import { DOCS_CONFIG } from "./testing/configs.js";
+import { BOT, fakeOctokit } from "./testing/fake-octokit.js";
 
 // ---------------------------------------------------------------------------
 // Test classifiers
@@ -132,63 +132,6 @@ describe("decision rules", () => {
 
   it("a malformed verdict counts as a veto", async () => {
     expect((await decide(as(eligible), as(malformed))).eligible).toBe(false);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Config validation
-// ---------------------------------------------------------------------------
-
-const DOCS_CONFIG = (mode = "active", extra = "") => `
-version: 1
-actions:
-  approve: true
-  autoMerge: true
-  mergeMethod: squash
-  labels: true
-  comment: true
-classifiers:
-  path-category:
-    mode: ${mode}
-    categories:
-      docs-only:
-        allow: ["docs/**", "adr/**", "**/*.md", "**/*.mdx"]
-        deny: [".github/**", "**/CLAUDE.md", "**/AGENTS.md", "**/prompts/**", "**/CHANGELOG.md"]
-${extra}`;
-
-describe("config", () => {
-  it("the shipped examples/hall-pass.yml is valid", () => {
-    const text = readFileSync(new URL("../examples/hall-pass.yml", import.meta.url), "utf8");
-    const r = parseConfig(text, registry);
-    expect(r.kind).toBe("ok");
-    expect(r.kind === "ok" && r.config.actions.mergeWhenClean).toBe(false);
-  });
-
-  it("accepts the example config", () => {
-    expect(parseConfig(DOCS_CONFIG("shadow"), registry).kind).toBe("ok");
-  });
-
-  it.each([
-    ["unknown top-level key", DOCS_CONFIG("active", "surprise: true")],
-    ["unknown classifier id", DOCS_CONFIG("active", "  not-a-classifier:\n    mode: active")],
-    ["bad mode", DOCS_CONFIG("sometimes")],
-    ["wrong version", DOCS_CONFIG().replace("version: 1", "version: 2")],
-    ["bad merge method", DOCS_CONFIG().replace("mergeMethod: squash", "mergeMethod: yolo")],
-    ["classifier schema failure", DOCS_CONFIG().replace('allow: ["docs/**", "adr/**", "**/*.md", "**/*.mdx"]', "allow: []")],
-    ["not YAML", "version: [1"],
-  ])("%s is a config error", (_, text) => {
-    const r = parseConfig(text, registry);
-    expect(r.kind).toBe("error");
-  });
-
-  it("names the problem", () => {
-    const r = parseConfig(DOCS_CONFIG("active", "  not-a-classifier:\n    mode: active"), registry);
-    expect(r.kind === "error" && r.message).toContain('unknown classifier "not-a-classifier"');
-  });
-
-  it("approve and autoMerge default to off when omitted", () => {
-    const r = parseConfig("version: 1\nclassifiers: {}\n", registry);
-    expect(r.kind === "ok" && r.config.actions).toMatchObject({ approve: false, autoMerge: false });
   });
 });
 

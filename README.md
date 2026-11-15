@@ -111,7 +111,7 @@ These steps assume an organisation. On a personal account, register the App unde
 
 ### 2. Let consumer repos use the Action (private copies only)
 
-Skip this if you use the public `garfieldmoore/hall-pass`. If you run your own private copy, go to its **Settings › Actions › General › Access** and choose **Accessible from repositories in the organization** (or, on a personal account, **owned by the user**).
+Skip this if you use the public `RainbowDemo/hall-pass`. If you run your own private copy, go to its **Settings › Actions › General › Access** and choose **Accessible from repositories in the organization** (or, on a personal account, **owned by the user**).
 
 ### 3. Repo settings
 
@@ -155,7 +155,7 @@ jobs:
         with:
           client-id: ${{ vars.MERGE_BOT_CLIENT_ID }}
           private-key: ${{ secrets.MERGE_BOT_KEY }}
-      - uses: garfieldmoore/hall-pass@v1
+      - uses: RainbowDemo/hall-pass@v1
         with:
           github-token: ${{ steps.app.outputs.token }}
 ```

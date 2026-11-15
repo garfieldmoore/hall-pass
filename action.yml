@@ -1,6 +1,6 @@
 name: hall-pass
 description: Classifies pull requests and approves and auto-merges the low-risk ones.
-author: garfieldmoore
+author: RainbowDemo
 
 inputs:
   github-token:

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { z } from "zod";
 import { classifiers as registry } from "./classifiers/index.js";
 import { loadConfig, parseConfig, type ConfiguredClassifier } from "./config.js";
@@ -491,6 +491,35 @@ describe("runPullRequest", () => {
       await t.go({ config: DOCS_CONFIG("sometimes"), dryRun: true });
       expect(t.state.reviews[0]?.state).toBe("APPROVED");
     });
+  });
+
+  it("a just-created check run that 404s at first is retried, and the run succeeds", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup({ checkRunNotYetVisible: 2 });
+      const p = t.go();
+      await vi.runAllTimersAsync();
+      const out = await p;
+      expect(out.status).toBe("decided");
+      expect(lastCheck(t.state)?.conclusion).toBe("success");
+      expect(t.state.reviews[0]?.state).toBe("APPROVED");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("a check run that stays 404 still fails closed", async () => {
+    vi.useFakeTimers();
+    try {
+      const t = setup({ checkRunNotYetVisible: 99 });
+      const p = t.go();
+      await vi.runAllTimersAsync();
+      const out = await p;
+      expect(out.status).toBe("error");
+      expect(t.state.reviews).toHaveLength(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("logs the decision as one JSON line", async () => {

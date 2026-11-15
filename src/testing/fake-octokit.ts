@@ -28,6 +28,7 @@ export interface FakeState {
   autoMergeVars: Record<string, unknown> | null; // variables of the last enable mutation
   mergedSha: string | null;
   getContentRefs: string[];
+  checkRunNotYetVisible: number; // checks.update answers 404 this many times first
 }
 
 export function fakeOctokit(init: Partial<FakeState> = {}) {
@@ -46,6 +47,7 @@ export function fakeOctokit(init: Partial<FakeState> = {}) {
     autoMergeVars: null,
     mergedSha: null,
     getContentRefs: [],
+    checkRunNotYetVisible: 0,
     ...init,
   };
   let nextId = 1000;
@@ -75,6 +77,10 @@ export function fakeOctokit(init: Partial<FakeState> = {}) {
       },
       async update(p: { check_run_id: number; conclusion: string; output: { title: string; summary: string } }) {
         call("checks.update");
+        if (s.checkRunNotYetVisible > 0) {
+          s.checkRunNotYetVisible--;
+          throw notFound();
+        }
         const run = s.checkRuns.find((r) => r.id === p.check_run_id);
         if (!run) throw notFound();
         Object.assign(run, { status: "completed", conclusion: p.conclusion, title: p.output.title, summary: p.output.summary });

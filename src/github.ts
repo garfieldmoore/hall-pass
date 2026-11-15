@@ -28,6 +28,10 @@ const MERGEABLE_NOW = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
 
 export type AutoMergeOutcome = "enabled" | "already-on" | "merged" | "left-for-human";
 
+/** Waits between retries when a just-created check run isn't visible yet (about 7 s in total). */
+export const CHECK_RUN_RETRY_DELAYS_MS = [500, 1500, 5000];
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 
 function truncate(s: string): string {
   return s.length <= MAX_CHECK_TEXT ? s : s.slice(0, MAX_CHECK_TEXT) + "\n\n…truncated";
@@ -75,14 +79,30 @@ export class GitHubOps {
     return res.data.id;
   }
 
+  /**
+   * Complete a check run we created moments ago. GitHub sometimes answers
+   * 404 for a check run created a second or two earlier (seen on real PRs),
+   * so retry a 404 a few times before giving up.
+   */
   async completeCheckRun(id: number, conclusion: CheckConclusion, title: string, summary: string): Promise<void> {
-    await this.octokit.rest.checks.update({
-      ...this.r,
-      check_run_id: id,
-      status: "completed",
-      conclusion,
-      output: { title: truncate(title).slice(0, 255), summary: truncate(summary) },
-    });
+    const update = () =>
+      this.octokit.rest.checks.update({
+        ...this.r,
+        check_run_id: id,
+        status: "completed",
+        conclusion,
+        output: { title: truncate(title).slice(0, 255), summary: truncate(summary) },
+      });
+    for (let attempt = 0; ; attempt++) {
+      try {
+        await update();
+        return;
+      } catch (e) {
+        const notYetVisible = (e as { status?: number }).status === 404;
+        if (!notYetVisible || attempt >= CHECK_RUN_RETRY_DELAYS_MS.length) throw e;
+        await sleep(CHECK_RUN_RETRY_DELAYS_MS[attempt] ?? 0);
+      }
+    }
   }
 
   // ---- sticky comment --------------------------------------------------

@@ -55305,6 +55305,10 @@ var actionsSchema = external_exports.strictObject({
   approve: external_exports.boolean().default(false),
   autoMerge: external_exports.boolean().default(false),
   mergeMethod: external_exports.enum(["squash", "merge", "rebase"]).default("squash"),
+  // When a qualifying PR can already merge (nothing left to wait for), GitHub
+  // refuses auto-merge. Off: leave it approved for a person. On: hall-pass
+  // merges it itself. Only turn on once the ruleset requires your CI checks.
+  mergeWhenClean: external_exports.boolean().default(false),
   labels: external_exports.boolean().default(true),
   comment: external_exports.boolean().default(true)
 });
@@ -55314,6 +55318,7 @@ var topLevelSchema = external_exports.strictObject({
     approve: false,
     autoMerge: false,
     mergeMethod: "squash",
+    mergeWhenClean: false,
     labels: true,
     comment: true
   }),
@@ -55438,6 +55443,7 @@ var CHECK_NAME = "hall-pass";
 var COMMENT_MARKER = "<!-- hall-pass -->";
 var LABEL_PREFIX = "hall-pass:";
 var MAX_CHECK_TEXT = 65e3;
+var MERGEABLE_NOW = /* @__PURE__ */ new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
 function sameActor(a, b) {
   if (!a || !b) return false;
   const norm = (s) => s.toLowerCase().replace(/\[bot\]$/, "");
@@ -55453,7 +55459,7 @@ var GitHubOps = class {
   }
   octokit;
   repo;
-  /** Our own login ("slug[bot]"), learned from the first check run we create. */
+  /** The App's own login ("slug[bot]"), learned from the first check run we create. */
   self = null;
   get r() {
     return { owner: this.repo.owner, repo: this.repo.name };
@@ -55533,7 +55539,7 @@ ${body}`;
   }
   // ---- reviews ---------------------------------------------------------
   async myApprovals(number4) {
-    if (!this.self) throw new Error("merge-bot identity unknown; refusing to touch reviews");
+    if (!this.self) throw new Error("App identity unknown; refusing to touch reviews");
     const reviews = await this.octokit.paginate(this.octokit.rest.pulls.listReviews, {
       ...this.r,
       pull_number: number4,
@@ -55554,7 +55560,7 @@ ${body}`;
     });
     return true;
   }
-  /** Dismiss every active approval merge-bot holds on this PR. Returns how many it dismissed. */
+  /** Dismiss every active approval hall-pass's App holds on this PR. Returns how many it dismissed. */
   async dismissApprovals(number4, message) {
     const mine = await this.myApprovals(number4);
     for (const r of mine) {
@@ -55569,6 +55575,7 @@ ${body}`;
         repository(owner: $owner, name: $name) {
           pullRequest(number: $number) {
             id
+            mergeStateStatus
             autoMergeRequest { enabledBy { login } }
           }
         }
@@ -55578,38 +55585,48 @@ ${body}`;
     const pr = res.repository.pullRequest;
     return {
       pullRequestId: pr.id,
+      mergeStateStatus: pr.mergeStateStatus,
       enabledBy: pr.autoMergeRequest ? pr.autoMergeRequest.enabledBy?.login ?? "(unknown)" : null
     };
   }
   /**
-   * Turn on auto-merge. Leaves it alone if anyone already turned it on.
-   * Returns "enabled", "already-on" or "merged" (the PR was already clean, so
-   * GitHub refused auto-merge and we merged it directly, pinned to headSha).
+   * Turn on auto-merge, pinned to headSha so a commit pushed mid-run can't
+   * inherit it. Leaves it alone if anyone already turned it on.
+   *
+   * GitHub refuses auto-merge on a PR that can merge right now (nothing left
+   * to wait for). Then: with mergeWhenClean, merge directly, pinned to
+   * headSha; without it, leave the approved PR for a person to merge.
    */
-  async enableAutoMerge(number4, headSha, method) {
+  async enableAutoMerge(number4, headSha, method, mergeWhenClean) {
     const state = await this.autoMergeState(number4);
     if (state.enabledBy !== null) return "already-on";
-    try {
-      await this.octokit.graphql(
-        `mutation($id: ID!, $method: PullRequestMergeMethod!) {
-          enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $method }) {
-            pullRequest { number }
-          }
-        }`,
-        { id: state.pullRequestId, method: method.toUpperCase() }
-      );
-      return "enabled";
-    } catch (e) {
-      if (/clean status/i.test(String(e.message))) {
+    const mergeableNow = async (status) => {
+      if (mergeWhenClean && (status === "CLEAN" || status === "HAS_HOOKS")) {
         await this.octokit.rest.pulls.merge({ ...this.r, pull_number: number4, sha: headSha, merge_method: method });
         return "merged";
       }
+      return "left-for-human";
+    };
+    if (MERGEABLE_NOW.has(state.mergeStateStatus)) return mergeableNow(state.mergeStateStatus);
+    try {
+      await this.octokit.graphql(
+        `mutation($id: ID!, $method: PullRequestMergeMethod!, $head: GitObjectID!) {
+          enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $method, expectedHeadOid: $head }) {
+            pullRequest { number }
+          }
+        }`,
+        { id: state.pullRequestId, method: method.toUpperCase(), head: headSha }
+      );
+      return "enabled";
+    } catch (e) {
+      const m = /\b(clean|unstable|has_hooks) status\b/i.exec(String(e.message));
+      if (m?.[1]) return mergeableNow(m[1].toUpperCase());
       throw e;
     }
   }
-  /** Turn off auto-merge, but only if merge-bot turned it on. Never touches a human's. */
+  /** Turn off auto-merge, but only if hall-pass's App turned it on. Never touches a human's. */
   async disableOwnAutoMerge(number4) {
-    if (!this.self) throw new Error("merge-bot identity unknown; refusing to touch auto-merge");
+    if (!this.self) throw new Error("App identity unknown; refusing to touch auto-merge");
     const state = await this.autoMergeState(number4);
     if (state.enabledBy === null || !sameActor(state.enabledBy, this.self)) return false;
     await this.octokit.graphql(
@@ -55704,6 +55721,14 @@ function decisionText(d) {
     return `No hall pass: ${parts.join("; ")}`;
   }
   if (!d.runs.some((r) => r.mode === "active" && r.kind === "eligibility")) {
+    const shadow = d.runs.filter((r) => r.mode === "shadow");
+    const wouldVeto = shadow.filter((r) => r.verdict.result === "veto").map((r) => r.id);
+    const wouldIssue = [
+      ...new Set(shadow.flatMap((r) => r.kind === "eligibility" && r.verdict.result === "eligible" ? [r.verdict.category] : []))
+    ];
+    if (wouldIssue.length && !wouldVeto.length) return `Would issue a hall pass (shadow): ${wouldIssue.join(", ")}`;
+    if (wouldVeto.length) return `No hall pass (shadow): ${wouldVeto.join(", ")} would block it`;
+    if (shadow.length) return "No hall pass (shadow): not in an eligible category";
     return "No hall pass: no active eligibility classifier";
   }
   return "No hall pass: not in an eligible category";
@@ -55741,20 +55766,23 @@ async function runPullRequest(input2) {
   const skip = pull.draft ? "draft" : pull.state !== "open" ? "closed" : isFork(pull) ? "fork" : null;
   if (skip) {
     await ops.createCheckRun(headSha, "neutral", `Skipped: ${skip} PR`, `hall-pass does not judge ${skip} PRs.`);
-    logJson(log, { ...where, outcome: "skipped", reason: skip });
+    const revoked = skip === "closed" ? [] : await tryRevoke(input2, `Hall pass withdrawn: ${skip} PR.`);
+    logJson(log, { ...where, outcome: "skipped", reason: skip, revoked });
     return { status: "skipped", reason: skip };
   }
   const loaded = await input2.loadConfig(pull.base.sha);
   if (loaded.kind === "missing") {
     await ops.createCheckRun(headSha, "neutral", "No config", `No \`${loaded.path}\` on the base commit, so nothing ran.`);
-    logJson(log, { ...where, outcome: "no-config" });
+    const revoked = await tryRevoke(input2, "Hall pass withdrawn: no hall-pass config on the base branch.");
+    logJson(log, { ...where, outcome: "no-config", revoked });
     return { status: "no-config" };
   }
   if (loaded.kind === "error") {
     await ops.createCheckRun(headSha, "failure", "Config error", `${loaded.message}
 
-No actions were taken.`);
-    logJson(log, { ...where, outcome: "config-error", error: loaded.message });
+Nothing was granted; any earlier approval or auto-merge from hall-pass was withdrawn.`);
+    const revoked = await tryRevoke(input2, "Hall pass withdrawn: the hall-pass config on the base branch is invalid.");
+    logJson(log, { ...where, outcome: "config-error", error: loaded.message, revoked });
     return { status: "config-error", message: loaded.message };
   }
   const config2 = loaded.config;
@@ -55766,22 +55794,32 @@ No actions were taken.`);
   } catch (e) {
     return failRun(input2, checkId, `runtime error: ${errorMessage(e)}`, where);
   }
+  let autoMerge;
   const body = report(decision, dryRun);
   const title = decisionText(decision);
   try {
     await ops.completeCheckRun(checkId, "success", title, body);
-    if (config2.actions.comment) await ops.upsertComment(pull.number, body);
+    let note = "";
     if (!dryRun) {
       if (config2.actions.labels) await ops.syncLabels(pull.number, decision.categories);
       if (decision.eligible) {
         if (config2.actions.approve) {
           await ops.approve(pull.number, headSha, `Hall pass issued: ${decision.categories.join(", ")}`);
         }
-        if (config2.actions.autoMerge) await ops.enableAutoMerge(pull.number, headSha, config2.actions.mergeMethod);
+        if (config2.actions.autoMerge) {
+          autoMerge = await ops.enableAutoMerge(pull.number, headSha, config2.actions.mergeMethod, config2.actions.mergeWhenClean);
+          if (autoMerge === "merged") {
+            log.info(`hall-pass merged PR #${pull.number} directly at ${headSha}: it was already mergeable and mergeWhenClean is on.`);
+          } else if (autoMerge === "left-for-human") {
+            log.info(`PR #${pull.number} can merge now, so GitHub won't queue auto-merge; mergeWhenClean is off, leaving it for a person.`);
+            note = "\n\n_This PR can already merge, so there is nothing for auto-merge to wait for. `mergeWhenClean` is off, so a person needs to press merge._";
+          }
+        }
       } else {
         await revoke(ops, pull.number, `Hall pass withdrawn. ${decisionText(decision)}`);
       }
     }
+    if (config2.actions.comment) await ops.upsertComment(pull.number, body + note);
   } catch (e) {
     return failRun(input2, checkId, `write failed: ${errorMessage(e)}`, where, decision);
   }
@@ -55792,6 +55830,7 @@ No actions were taken.`);
     eligible: decision.eligible,
     categories: decision.categories,
     vetoes: decision.vetoes,
+    autoMerge,
     runs: decision.runs.map((r) => ({ id: r.id, mode: r.mode, result: r.verdict.result, error: r.error, ms: r.durationMs }))
   });
   return { status: "decided", decision };
@@ -55800,13 +55839,24 @@ async function revoke(ops, number4, message) {
   await ops.dismissApprovals(number4, message);
   await ops.disableOwnAutoMerge(number4);
 }
+async function tryRevoke(input2, message) {
+  if (input2.dryRun) return [];
+  try {
+    const dismissed = await input2.ops.dismissApprovals(input2.pull.number, message);
+    const disabled = await input2.ops.disableOwnAutoMerge(input2.pull.number);
+    return [...dismissed ? [`dismissed ${dismissed} approval(s)`] : [], ...disabled ? ["turned off auto-merge"] : []];
+  } catch (e) {
+    input2.log.warning(`could not withdraw earlier approval or auto-merge: ${errorMessage(e)}`);
+    return [`withdraw failed: ${errorMessage(e)}`];
+  }
+}
 async function failRun(input2, checkId, message, where, decision) {
   const { ops, pull, log, dryRun } = input2;
   const rollback = [];
   if (!dryRun) {
     try {
       await revoke(ops, pull.number, `hall-pass: ${message}`);
-      rollback.push("rolled back merge-bot approval and auto-merge");
+      rollback.push("rolled back hall-pass's approval and auto-merge");
     } catch (e) {
       rollback.push(`rollback also failed: ${errorMessage(e)}`);
       log.warning(`rollback failed: ${errorMessage(e)}`);

@@ -1,5 +1,5 @@
 import type { ConfiguredClassifier, ConfigResult } from "./config.js";
-import type { GitHubOps } from "./github.js";
+import type { AutoMergeOutcome, GitHubOps } from "./github.js";
 import type { PullLike } from "./context.js";
 import { isFork } from "./context.js";
 import type { Classifier, ClassifierRun, Decision, PrContext, Verdict } from "./types.js";
@@ -119,6 +119,15 @@ export function decisionText(d: Decision): string {
     return `No hall pass: ${parts.join("; ")}`;
   }
   if (!d.runs.some((r) => r.mode === "active" && r.kind === "eligibility")) {
+    // Nothing active to decide with. Say what shadow mode would have done.
+    const shadow = d.runs.filter((r) => r.mode === "shadow");
+    const wouldVeto = shadow.filter((r) => r.verdict.result === "veto").map((r) => r.id);
+    const wouldIssue = [
+      ...new Set(shadow.flatMap((r) => (r.kind === "eligibility" && r.verdict.result === "eligible" ? [r.verdict.category] : []))),
+    ];
+    if (wouldIssue.length && !wouldVeto.length) return `Would issue a hall pass (shadow): ${wouldIssue.join(", ")}`;
+    if (wouldVeto.length) return `No hall pass (shadow): ${wouldVeto.join(", ")} would block it`;
+    if (shadow.length) return "No hall pass (shadow): not in an eligible category";
     return "No hall pass: no active eligibility classifier";
   }
   return "No hall pass: not in an eligible category";
@@ -191,30 +200,35 @@ export async function runPullRequest(input: RunInput): Promise<RunOutcome> {
   const headSha = pull.head.sha;
   const where = { repo: `${repo.owner}/${repo.name}`, pr: pull.number, headSha, baseSha: pull.base.sha };
 
-  // 1. Skip drafts, closed PRs and forks.
+  // 1. Skip drafts, closed PRs and forks. Anything the App granted earlier is
+  // taken back (except on closed PRs, where there's nothing left to protect).
   const skip = pull.draft ? "draft" : pull.state !== "open" ? "closed" : isFork(pull) ? "fork" : null;
   if (skip) {
     await ops.createCheckRun(headSha, "neutral", `Skipped: ${skip} PR`, `hall-pass does not judge ${skip} PRs.`);
-    logJson(log, { ...where, outcome: "skipped", reason: skip });
+    const revoked = skip === "closed" ? [] : await tryRevoke(input, `Hall pass withdrawn: ${skip} PR.`);
+    logJson(log, { ...where, outcome: "skipped", reason: skip, revoked });
     return { status: "skipped", reason: skip };
   }
 
-  // 2. Config from the base commit. On error: a failed check run and no other writes.
+  // 2. Config from the base commit. Without a valid config, hall-pass grants
+  // nothing, and takes back anything it granted earlier.
   const loaded = await input.loadConfig(pull.base.sha);
   if (loaded.kind === "missing") {
     await ops.createCheckRun(headSha, "neutral", "No config", `No \`${loaded.path}\` on the base commit, so nothing ran.`);
-    logJson(log, { ...where, outcome: "no-config" });
+    const revoked = await tryRevoke(input, "Hall pass withdrawn: no hall-pass config on the base branch.");
+    logJson(log, { ...where, outcome: "no-config", revoked });
     return { status: "no-config" };
   }
   if (loaded.kind === "error") {
-    await ops.createCheckRun(headSha, "failure", "Config error", `${loaded.message}\n\nNo actions were taken.`);
-    logJson(log, { ...where, outcome: "config-error", error: loaded.message });
+    await ops.createCheckRun(headSha, "failure", "Config error", `${loaded.message}\n\nNothing was granted; any earlier approval or auto-merge from hall-pass was withdrawn.`);
+    const revoked = await tryRevoke(input, "Hall pass withdrawn: the hall-pass config on the base branch is invalid.");
+    logJson(log, { ...where, outcome: "config-error", error: loaded.message, revoked });
     return { status: "config-error", message: loaded.message };
   }
   const config = loaded.config;
 
   // Open the check run first: it marks the run as in progress and tells us
-  // merge-bot's identity, which every review and auto-merge write needs.
+  // the App's identity, which every review and auto-merge write needs.
   const checkId = await ops.startCheckRun(headSha);
 
   // 3–5. Build the context, run the classifiers, decide.
@@ -227,15 +241,14 @@ export async function runPullRequest(input: RunInput): Promise<RunOutcome> {
   }
 
   // 6. Check run. Success means "the run completed", whatever the decision.
+  let autoMerge: AutoMergeOutcome | undefined;
   const body = report(decision, dryRun);
   const title = decisionText(decision);
 
   try {
     await ops.completeCheckRun(checkId, "success", title, body);
 
-    // 7. Sticky comment.
-    if (config.actions.comment) await ops.upsertComment(pull.number, body);
-
+    let note = "";
     if (!dryRun) {
       // 8. Labels.
       if (config.actions.labels) await ops.syncLabels(pull.number, decision.categories);
@@ -245,13 +258,25 @@ export async function runPullRequest(input: RunInput): Promise<RunOutcome> {
         if (config.actions.approve) {
           await ops.approve(pull.number, headSha, `Hall pass issued: ${decision.categories.join(", ")}`);
         }
-        if (config.actions.autoMerge) await ops.enableAutoMerge(pull.number, headSha, config.actions.mergeMethod);
+        if (config.actions.autoMerge) {
+          autoMerge = await ops.enableAutoMerge(pull.number, headSha, config.actions.mergeMethod, config.actions.mergeWhenClean);
+          if (autoMerge === "merged") {
+            log.info(`hall-pass merged PR #${pull.number} directly at ${headSha}: it was already mergeable and mergeWhenClean is on.`);
+          } else if (autoMerge === "left-for-human") {
+            log.info(`PR #${pull.number} can merge now, so GitHub won't queue auto-merge; mergeWhenClean is off, leaving it for a person.`);
+            note =
+              "\n\n_This PR can already merge, so there is nothing for auto-merge to wait for. `mergeWhenClean` is off, so a person needs to press merge._";
+          }
+        }
       } else {
-        // 10. Take back anything merge-bot gave earlier. Always, regardless of
+        // 10. Take back anything the App gave earlier. Always, regardless of
         // actions.* flags: a flag turned off since must not strand an approval.
         await revoke(ops, pull.number, `Hall pass withdrawn. ${decisionText(decision)}`);
       }
     }
+
+    // 7. Sticky comment, last so it can say what happened to auto-merge.
+    if (config.actions.comment) await ops.upsertComment(pull.number, body + note);
   } catch (e) {
     return failRun(input, checkId, `write failed: ${errorMessage(e)}`, where, decision);
   }
@@ -263,6 +288,7 @@ export async function runPullRequest(input: RunInput): Promise<RunOutcome> {
     eligible: decision.eligible,
     categories: decision.categories,
     vetoes: decision.vetoes,
+    autoMerge,
     runs: decision.runs.map((r) => ({ id: r.id, mode: r.mode, result: r.verdict.result, error: r.error, ms: r.durationMs })),
   });
   return { status: "decided", decision };
@@ -273,7 +299,24 @@ async function revoke(ops: GitHubOps, number: number, message: string) {
   await ops.disableOwnAutoMerge(number);
 }
 
-/** Don't leave a PR half done: undo merge-bot's approval and auto-merge, then fail the check run. */
+/**
+ * Take back the App's approval and auto-merge on a path that grants nothing.
+ * Revoking is always safe, so a failure here is logged, not fatal. Skipped in
+ * dry-run, which never writes beyond the check run and comment.
+ */
+async function tryRevoke(input: RunInput, message: string): Promise<string[]> {
+  if (input.dryRun) return [];
+  try {
+    const dismissed = await input.ops.dismissApprovals(input.pull.number, message);
+    const disabled = await input.ops.disableOwnAutoMerge(input.pull.number);
+    return [...(dismissed ? [`dismissed ${dismissed} approval(s)`] : []), ...(disabled ? ["turned off auto-merge"] : [])];
+  } catch (e) {
+    input.log.warning(`could not withdraw earlier approval or auto-merge: ${errorMessage(e)}`);
+    return [`withdraw failed: ${errorMessage(e)}`];
+  }
+}
+
+/** Don't leave a PR half done: undo the App's approval and auto-merge, then fail the check run. */
 async function failRun(
   input: RunInput,
   checkId: number,
@@ -286,7 +329,7 @@ async function failRun(
   if (!dryRun) {
     try {
       await revoke(ops, pull.number, `hall-pass: ${message}`);
-      rollback.push("rolled back merge-bot approval and auto-merge");
+      rollback.push("rolled back hall-pass's approval and auto-merge");
     } catch (e) {
       rollback.push(`rollback also failed: ${errorMessage(e)}`);
       log.warning(`rollback failed: ${errorMessage(e)}`);

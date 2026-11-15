@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 import { classifiers as registry } from "../src/classifiers/index.js";
@@ -117,7 +118,16 @@ describe("decision rules", () => {
     expect(decisionText(await decide(as(eligible), as(apiContract)))).toBe("No hall pass: touches api-contract");
     expect(decisionText(await decide(as(eligible), as(throws)))).toBe("No hall pass: throws failed");
     expect(decisionText(await decide(as(abstain)))).toBe("No hall pass: not in an eligible category");
-    expect(decisionText(await decide(as(eligible, "shadow")))).toBe("No hall pass: no active eligibility classifier");
+    expect(decisionText(await decide())).toBe("No hall pass: no active eligibility classifier");
+  });
+
+  it("shadow wording says what it would have done", async () => {
+    const apiContract = fixed("api-contract", "veto", { result: "veto", reason: "x", evidence: [] });
+    expect(decisionText(await decide(as(eligible, "shadow")))).toBe("Would issue a hall pass (shadow): docs-only");
+    expect(decisionText(await decide(as(abstain, "shadow")))).toBe("No hall pass (shadow): not in an eligible category");
+    expect(decisionText(await decide(as(eligible, "shadow"), as(apiContract, "shadow")))).toBe(
+      "No hall pass (shadow): api-contract would block it",
+    );
   });
 
   it("a malformed verdict counts as a veto", async () => {
@@ -147,6 +157,13 @@ classifiers:
 ${extra}`;
 
 describe("config", () => {
+  it("the shipped examples/hall-pass.yml is valid", () => {
+    const text = readFileSync(new URL("../examples/hall-pass.yml", import.meta.url), "utf8");
+    const r = parseConfig(text, registry);
+    expect(r.kind).toBe("ok");
+    expect(r.kind === "ok" && r.config.actions.mergeWhenClean).toBe(false);
+  });
+
   it("accepts the example config", () => {
     expect(parseConfig(DOCS_CONFIG("shadow"), registry).kind).toBe("ok");
   });
@@ -238,6 +255,9 @@ const WRITES = [
   "graphql.disableAutoMerge",
 ];
 const writes = (calls: string[]) => calls.filter((c) => WRITES.includes(c));
+/** Writes that give the PR something. Withdrawing (dismiss, disable) is always allowed. */
+const GRANTING = ["issues.addLabels", "pulls.createReview", "pulls.merge", "graphql.enableAutoMerge", "issues.createComment"];
+const CLEAN_MERGE_CONFIG = DOCS_CONFIG().replace("mergeMethod: squash", "mergeMethod: squash\n  mergeWhenClean: true");
 const lastCheck = (s: { checkRuns: { conclusion?: string; title?: string; summary?: string }[] }) => s.checkRuns.at(-1);
 
 describe("runPullRequest", () => {
@@ -329,11 +349,11 @@ describe("runPullRequest", () => {
     expect(lastCheck(t.state)?.summary).toContain("error → veto");
   });
 
-  it("invalid config on the base branch: no writes; check run fails naming the problem", async () => {
+  it("invalid config on the base branch: grants nothing; check run fails naming the problem", async () => {
     const t = setup();
     const out = await t.go({ config: DOCS_CONFIG("active", "  nope:\n    mode: active") });
     expect(out.status).toBe("config-error");
-    expect(writes(t.state.calls)).toEqual([]);
+    expect(writes(t.state.calls).filter((c) => GRANTING.includes(c))).toEqual([]);
     expect(lastCheck(t.state)).toMatchObject({ conclusion: "failure", title: "Config error" });
     expect(lastCheck(t.state)?.summary).toContain('unknown classifier "nope"');
   });
@@ -420,10 +440,105 @@ describe("runPullRequest", () => {
     expect(lastCheck(t.state)?.conclusion).toBe("failure");
   });
 
-  it("PR already clean: GitHub refuses auto-merge, so it merges pinned to the head SHA", async () => {
-    const t = setup({ autoMergeCleanStatus: true });
+  it("pins auto-merge to the head SHA (expectedHeadOid)", async () => {
+    const t = setup();
+    await t.go();
+    expect(t.state.autoMergeVars).toMatchObject({ head: "head1", method: "SQUASH" });
+  });
+
+  it("already mergeable, mergeWhenClean off (default): approves but leaves the merge to a person", async () => {
+    const t = setup({ mergeStateStatus: "CLEAN" });
+    const out = await t.go();
+    expect(out.status).toBe("decided");
+    expect(t.state.merged).toBe(false);
+    expect(t.state.calls).not.toContain("graphql.enableAutoMerge");
+    expect(t.state.reviews[0]?.state).toBe("APPROVED");
+    expect(t.state.comments[0]?.body).toContain("a person needs to press merge");
+    expect(t.logs.some((l) => l.includes("leaving it for a person"))).toBe(true);
+  });
+
+  it("already mergeable, mergeWhenClean on: merges directly, pinned to the head SHA, and logs it", async () => {
+    const t = setup({ mergeStateStatus: "CLEAN", configText: CLEAN_MERGE_CONFIG });
     await t.go();
     expect(t.state.merged).toBe(true);
+    expect(t.state.mergedSha).toBe("head1");
+    expect(t.logs.some((l) => l.includes("merged PR #7 directly at head1"))).toBe(true);
+  });
+
+  it("race: state looked blocked but GitHub says clean; falls back on the error text", async () => {
+    const t = setup({ autoMergeCleanStatus: true, configText: CLEAN_MERGE_CONFIG });
+    await t.go();
+    expect(t.state.merged).toBe(true);
+  });
+
+  it("race with mergeWhenClean off: leaves it for a person, no error", async () => {
+    const t = setup({ autoMergeCleanStatus: true });
+    const out = await t.go();
+    expect(out.status).toBe("decided");
+    expect(t.state.merged).toBe(false);
+    expect(t.state.reviews[0]?.state).toBe("APPROVED");
+  });
+
+  it("UNSTABLE (a non-required check failing): never merges directly, even with mergeWhenClean", async () => {
+    const t = setup({ mergeStateStatus: "UNSTABLE", configText: CLEAN_MERGE_CONFIG });
+    await t.go();
+    expect(t.state.merged).toBe(false);
+    expect(t.state.comments[0]?.body).toContain("a person needs to press merge");
+  });
+
+  it("an unrecognised auto-merge error still rolls back and fails", async () => {
+    const t = setup({ fail: { "graphql.enableAutoMerge": new Error("Pull request is in dirty status") } });
+    const out = await t.go();
+    expect(out.status).toBe("error");
+    expect(t.state.reviews[0]?.state).toBe("DISMISSED");
+  });
+
+  describe("withdrawing earlier grants on paths that grant nothing", () => {
+    const granted = () => ({
+      reviews: [{ id: 1, user: { login: BOT }, state: "APPROVED" as const, commit_id: "head1", body: "" }],
+      autoMergeBy: "merge-bot",
+    });
+
+    it("config broken on the base branch: withdraws approval and auto-merge", async () => {
+      const t = setup(granted());
+      const out = await t.go({ config: DOCS_CONFIG("sometimes") });
+      expect(out.status).toBe("config-error");
+      expect(t.state.reviews[0]?.state).toBe("DISMISSED");
+      expect(t.state.autoMergeBy).toBeNull();
+      expect(writes(t.state.calls).filter((c) => GRANTING.includes(c))).toEqual([]);
+    });
+
+    it("config removed from the base branch: withdraws", async () => {
+      const t = setup({ ...granted(), configText: null });
+      expect((await t.go({ config: null })).status).toBe("no-config");
+      expect(t.state.reviews[0]?.state).toBe("DISMISSED");
+      expect(t.state.autoMergeBy).toBeNull();
+    });
+
+    it("PR turned back into a draft: withdraws", async () => {
+      const t = setup(granted());
+      await t.go({ pull: { draft: true } });
+      expect(t.state.reviews[0]?.state).toBe("DISMISSED");
+      expect(t.state.autoMergeBy).toBeNull();
+    });
+
+    it("closed PR: leaves everything alone", async () => {
+      const t = setup(granted());
+      await t.go({ pull: { state: "closed" } });
+      expect(t.state.reviews[0]?.state).toBe("APPROVED");
+    });
+
+    it("a human's auto-merge is still left alone", async () => {
+      const t = setup({ ...granted(), autoMergeBy: "some-human" });
+      await t.go({ config: DOCS_CONFIG("sometimes") });
+      expect(t.state.autoMergeBy).toBe("some-human");
+    });
+
+    it("dry-run: withdraws nothing", async () => {
+      const t = setup(granted());
+      await t.go({ config: DOCS_CONFIG("sometimes"), dryRun: true });
+      expect(t.state.reviews[0]?.state).toBe("APPROVED");
+    });
   });
 
   it("logs the decision as one JSON line", async () => {

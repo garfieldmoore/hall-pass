@@ -30,6 +30,8 @@ export type AutoMergeOutcome = "enabled" | "already-on" | "merged" | "left-for-h
 
 /** Waits between retries when a just-created check run isn't visible yet (about 7 s in total). */
 export const CHECK_RUN_RETRY_DELAYS_MS = [500, 1500, 5000];
+/** Retries after the first attempt: one per delay above, so 4 attempts at most. */
+export const MAX_CHECK_RUN_RETRIES = CHECK_RUN_RETRY_DELAYS_MS.length;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 
@@ -93,14 +95,15 @@ export class GitHubOps {
         conclusion,
         output: { title: truncate(title).slice(0, 255), summary: truncate(summary) },
       });
-    for (let attempt = 0; ; attempt++) {
+    for (let retry = 0; retry <= MAX_CHECK_RUN_RETRIES; retry++) {
       try {
         await update();
         return;
       } catch (e) {
         const notYetVisible = (e as { status?: number }).status === 404;
-        if (!notYetVisible || attempt >= CHECK_RUN_RETRY_DELAYS_MS.length) throw e;
-        await sleep(CHECK_RUN_RETRY_DELAYS_MS[attempt] ?? 0);
+        const retriesLeft = retry < MAX_CHECK_RUN_RETRIES;
+        if (!notYetVisible || !retriesLeft) throw e;
+        await sleep(CHECK_RUN_RETRY_DELAYS_MS[retry] ?? 0);
       }
     }
   }

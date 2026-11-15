@@ -28,6 +28,12 @@ const MERGEABLE_NOW = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
 
 export type AutoMergeOutcome = "enabled" | "already-on" | "merged" | "left-for-human";
 
+/** How many times to retry completing a just-created check run that answers 404 (4 attempts at most). */
+export const MAX_CHECK_RUN_RETRIES = 3;
+/** Wait before retry n (0-based): 0.5 s, 1.5 s, 4.5 s, so about 6.5 s in total. */
+export const checkRunRetryDelayMs = (retry: number) => 500 * 3 ** retry;
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 
 function truncate(s: string): string {
   return s.length <= MAX_CHECK_TEXT ? s : s.slice(0, MAX_CHECK_TEXT) + "\n\n…truncated";
@@ -75,14 +81,31 @@ export class GitHubOps {
     return res.data.id;
   }
 
+  /**
+   * Complete a check run we created moments ago. GitHub sometimes answers
+   * 404 for a check run created a second or two earlier (seen on real PRs),
+   * so retry a 404 a few times before giving up.
+   */
   async completeCheckRun(id: number, conclusion: CheckConclusion, title: string, summary: string): Promise<void> {
-    await this.octokit.rest.checks.update({
-      ...this.r,
-      check_run_id: id,
-      status: "completed",
-      conclusion,
-      output: { title: truncate(title).slice(0, 255), summary: truncate(summary) },
-    });
+    const update = () =>
+      this.octokit.rest.checks.update({
+        ...this.r,
+        check_run_id: id,
+        status: "completed",
+        conclusion,
+        output: { title: truncate(title).slice(0, 255), summary: truncate(summary) },
+      });
+    for (let retry = 0; retry <= MAX_CHECK_RUN_RETRIES; retry++) {
+      try {
+        await update();
+        return;
+      } catch (e) {
+        const notYetVisible = (e as { status?: number }).status === 404;
+        const retriesLeft = retry < MAX_CHECK_RUN_RETRIES;
+        if (!notYetVisible || !retriesLeft) throw e;
+        await sleep(checkRunRetryDelayMs(retry));
+      }
+    }
   }
 
   // ---- sticky comment --------------------------------------------------

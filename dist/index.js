@@ -55580,6 +55580,9 @@ var COMMENT_MARKER = "<!-- hall-pass -->";
 var LABEL_PREFIX = "hall-pass:";
 var MAX_CHECK_TEXT = 65e3;
 var MERGEABLE_NOW = /* @__PURE__ */ new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
+var MAX_CHECK_RUN_RETRIES = 3;
+var checkRunRetryDelayMs = (retry) => 500 * 3 ** retry;
+var sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function truncate(s) {
   return s.length <= MAX_CHECK_TEXT ? s : s.slice(0, MAX_CHECK_TEXT) + "\n\n\u2026truncated";
 }
@@ -55621,14 +55624,30 @@ var GitHubOps = class {
     if (slug) this.self = `${slug}[bot]`;
     return res.data.id;
   }
+  /**
+   * Complete a check run we created moments ago. GitHub sometimes answers
+   * 404 for a check run created a second or two earlier (seen on real PRs),
+   * so retry a 404 a few times before giving up.
+   */
   async completeCheckRun(id, conclusion, title, summary2) {
-    await this.octokit.rest.checks.update({
+    const update = () => this.octokit.rest.checks.update({
       ...this.r,
       check_run_id: id,
       status: "completed",
       conclusion,
       output: { title: truncate(title).slice(0, 255), summary: truncate(summary2) }
     });
+    for (let retry = 0; retry <= MAX_CHECK_RUN_RETRIES; retry++) {
+      try {
+        await update();
+        return;
+      } catch (e) {
+        const notYetVisible = e.status === 404;
+        const retriesLeft = retry < MAX_CHECK_RUN_RETRIES;
+        if (!notYetVisible || !retriesLeft) throw e;
+        await sleep(checkRunRetryDelayMs(retry));
+      }
+    }
   }
   // ---- sticky comment --------------------------------------------------
   async upsertComment(number4, body) {

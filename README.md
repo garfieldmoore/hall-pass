@@ -223,15 +223,7 @@ Dependabot already applies a 3-day cooldown to version updates when `cooldown` i
 Workflows triggered by Dependabot PRs can't read normal Actions secrets, only **Dependabot secrets**. So the hall-pass workflow on a Dependabot PR can't see `MERGE_BOT_KEY` unless it's also stored as a Dependabot secret.
 
 - Add the App's private key as a **Dependabot secret** with the same name, `MERGE_BOT_KEY`: **Settings › Secrets and variables › Dependabot › New repository secret**, or the org-level equivalent.
-- GitHub's docs don't say whether Actions **variables** (`vars.MERGE_BOT_CLIENT_ID`) are readable in Dependabot-triggered runs. If they aren't, the token step fails with "client-id … must be set". The safe option is to store the Client ID as a Dependabot secret too, `MERGE_BOT_CLIENT_ID`, and let the workflow fall back to it:
-
-  ```yaml
-        - uses: actions/create-github-app-token@v3
-          id: app
-          with:
-            client-id: ${{ vars.MERGE_BOT_CLIENT_ID || secrets.MERGE_BOT_CLIENT_ID }}
-            private-key: ${{ secrets.MERGE_BOT_KEY }}
-  ```
+- Actions **variables** *are* readable in Dependabot-triggered runs, so `vars.MERGE_BOT_CLIENT_ID` needs no copy. (GitHub's docs don't say so; we confirmed it on a real Dependabot PR, where the token step received the Client ID but failed with "'private-key' input must be set" until the Dependabot secret existed.)
 
 ### 3. Rebases
 

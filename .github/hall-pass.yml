@@ -1,0 +1,24 @@
+# hall-pass config for hall-pass itself. Read from the base branch, so
+# changes here only take effect once merged.
+#
+# Only documentation qualifies. Classifier code, dist/, workflows and this
+# file always need a human. No dependabot-safe here: a dependency bump
+# changes the bundled dist/, which CI rejects, so it could never merge anyway.
+version: 1
+
+actions:
+  approve: true
+  autoMerge: true
+  mergeMethod: squash
+  mergeWhenClean: true   # safe: the ruleset requires the CI "check" job
+  labels: true
+  comment: true
+
+classifiers:
+  path-category:
+    mode: shadow         # switch to active once a few PRs look right
+    categories:
+      docs-only:
+        allow: ["**/*.md", "**/*.mdx"]
+        deny:
+          - "**/CHANGELOG.md"

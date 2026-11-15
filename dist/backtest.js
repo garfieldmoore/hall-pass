@@ -53037,6 +53037,10 @@ var actionsSchema = external_exports.strictObject({
   approve: external_exports.boolean().default(false),
   autoMerge: external_exports.boolean().default(false),
   mergeMethod: external_exports.enum(["squash", "merge", "rebase"]).default("squash"),
+  // When a qualifying PR can already merge (nothing left to wait for), GitHub
+  // refuses auto-merge. Off: leave it approved for a person. On: hall-pass
+  // merges it itself. Only turn on once the ruleset requires your CI checks.
+  mergeWhenClean: external_exports.boolean().default(false),
   labels: external_exports.boolean().default(true),
   comment: external_exports.boolean().default(true)
 });
@@ -53046,6 +53050,7 @@ var topLevelSchema = external_exports.strictObject({
     approve: false,
     autoMerge: false,
     mergeMethod: "squash",
+    mergeWhenClean: false,
     labels: true,
     comment: true
   }),

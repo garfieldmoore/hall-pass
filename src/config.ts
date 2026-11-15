@@ -10,6 +10,10 @@ const actionsSchema = z.strictObject({
   approve: z.boolean().default(false),
   autoMerge: z.boolean().default(false),
   mergeMethod: z.enum(["squash", "merge", "rebase"]).default("squash"),
+  // When a qualifying PR can already merge (nothing left to wait for), GitHub
+  // refuses auto-merge. Off: leave it approved for a person. On: hall-pass
+  // merges it itself. Only turn on once the ruleset requires your CI checks.
+  mergeWhenClean: z.boolean().default(false),
   labels: z.boolean().default(true),
   comment: z.boolean().default(true),
 });
@@ -20,6 +24,7 @@ const topLevelSchema = z.strictObject({
     approve: false,
     autoMerge: false,
     mergeMethod: "squash",
+    mergeWhenClean: false,
     labels: true,
     comment: true,
   }),

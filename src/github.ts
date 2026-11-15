@@ -18,8 +18,14 @@ interface Repo {
 
 interface AutoMergeState {
   pullRequestId: string;
+  mergeStateStatus: string; // CLEAN, BLOCKED, UNSTABLE, ... (GraphQL MergeStateStatus)
   enabledBy: string | null; // null when auto-merge is off
 }
+
+/** Merge states in which GitHub refuses to turn on auto-merge: the PR can merge right now. */
+const MERGEABLE_NOW = new Set(["CLEAN", "HAS_HOOKS", "UNSTABLE"]);
+
+export type AutoMergeOutcome = "enabled" | "already-on" | "merged" | "left-for-human";
 
 /** Bots show up as "slug[bot]" in REST and as "slug" in GraphQL. Compare on the slug. */
 export function sameActor(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -33,7 +39,7 @@ function truncate(s: string): string {
 }
 
 export class GitHubOps {
-  /** Our own login ("slug[bot]"), learned from the first check run we create. */
+  /** The App's own login ("slug[bot]"), learned from the first check run we create. */
   self: string | null = null;
 
   constructor(
@@ -132,7 +138,7 @@ export class GitHubOps {
   // ---- reviews ---------------------------------------------------------
 
   private async myApprovals(number: number) {
-    if (!this.self) throw new Error("merge-bot identity unknown; refusing to touch reviews");
+    if (!this.self) throw new Error("App identity unknown; refusing to touch reviews");
     const reviews = await this.octokit.paginate(this.octokit.rest.pulls.listReviews, {
       ...this.r,
       pull_number: number,
@@ -155,7 +161,7 @@ export class GitHubOps {
     return true;
   }
 
-  /** Dismiss every active approval merge-bot holds on this PR. Returns how many it dismissed. */
+  /** Dismiss every active approval hall-pass's App holds on this PR. Returns how many it dismissed. */
   async dismissApprovals(number: number, message: string): Promise<number> {
     const mine = await this.myApprovals(number);
     for (const r of mine) {
@@ -169,13 +175,18 @@ export class GitHubOps {
   async autoMergeState(number: number): Promise<AutoMergeState> {
     const res = await this.octokit.graphql<{
       repository: {
-        pullRequest: { id: string; autoMergeRequest: { enabledBy: { login: string } | null } | null };
+        pullRequest: {
+          id: string;
+          mergeStateStatus: string;
+          autoMergeRequest: { enabledBy: { login: string } | null } | null;
+        };
       };
     }>(
       `query($owner: String!, $name: String!, $number: Int!) {
         repository(owner: $owner, name: $name) {
           pullRequest(number: $number) {
             id
+            mergeStateStatus
             autoMergeRequest { enabledBy { login } }
           }
         }
@@ -185,41 +196,63 @@ export class GitHubOps {
     const pr = res.repository.pullRequest;
     return {
       pullRequestId: pr.id,
+      mergeStateStatus: pr.mergeStateStatus,
       enabledBy: pr.autoMergeRequest ? (pr.autoMergeRequest.enabledBy?.login ?? "(unknown)") : null,
     };
   }
 
   /**
-   * Turn on auto-merge. Leaves it alone if anyone already turned it on.
-   * Returns "enabled", "already-on" or "merged" (the PR was already clean, so
-   * GitHub refused auto-merge and we merged it directly, pinned to headSha).
+   * Turn on auto-merge, pinned to headSha so a commit pushed mid-run can't
+   * inherit it. Leaves it alone if anyone already turned it on.
+   *
+   * GitHub refuses auto-merge on a PR that can merge right now (nothing left
+   * to wait for). Then: with mergeWhenClean, merge directly, pinned to
+   * headSha; without it, leave the approved PR for a person to merge.
    */
-  async enableAutoMerge(number: number, headSha: string, method: MergeMethod): Promise<"enabled" | "already-on" | "merged"> {
+  async enableAutoMerge(
+    number: number,
+    headSha: string,
+    method: MergeMethod,
+    mergeWhenClean: boolean,
+  ): Promise<AutoMergeOutcome> {
     const state = await this.autoMergeState(number);
     if (state.enabledBy !== null) return "already-on";
-    try {
-      await this.octokit.graphql(
-        `mutation($id: ID!, $method: PullRequestMergeMethod!) {
-          enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $method }) {
-            pullRequest { number }
-          }
-        }`,
-        { id: state.pullRequestId, method: method.toUpperCase() },
-      );
-      return "enabled";
-    } catch (e) {
-      // GitHub won't enable auto-merge on a PR that can merge right now.
-      if (/clean status/i.test(String((e as Error).message))) {
+
+    const mergeableNow = async (status: string): Promise<AutoMergeOutcome> => {
+      if (mergeWhenClean && (status === "CLEAN" || status === "HAS_HOOKS")) {
         await this.octokit.rest.pulls.merge({ ...this.r, pull_number: number, sha: headSha, merge_method: method });
         return "merged";
       }
+      return "left-for-human";
+    };
+
+    // Ask first rather than relying on GitHub's error text.
+    if (MERGEABLE_NOW.has(state.mergeStateStatus)) return mergeableNow(state.mergeStateStatus);
+
+    try {
+      await this.octokit.graphql(
+        // Variable names must not collide with Octokit's request options
+        // (method, url, query, headers, ...): Octokit rejects or swallows them.
+        `mutation($id: ID!, $mergeMethod: PullRequestMergeMethod!, $head: GitObjectID!) {
+          enablePullRequestAutoMerge(input: { pullRequestId: $id, mergeMethod: $mergeMethod, expectedHeadOid: $head }) {
+            pullRequest { number }
+          }
+        }`,
+        { id: state.pullRequestId, mergeMethod: method.toUpperCase(), head: headSha },
+      );
+      return "enabled";
+    } catch (e) {
+      // The state can change between the query and the mutation (our own
+      // approval may be what made it mergeable). Fall back to the error text.
+      const m = /\b(clean|unstable|has_hooks) status\b/i.exec(String((e as Error).message));
+      if (m?.[1]) return mergeableNow(m[1].toUpperCase());
       throw e;
     }
   }
 
-  /** Turn off auto-merge, but only if merge-bot turned it on. Never touches a human's. */
+  /** Turn off auto-merge, but only if hall-pass's App turned it on. Never touches a human's. */
   async disableOwnAutoMerge(number: number): Promise<boolean> {
-    if (!this.self) throw new Error("merge-bot identity unknown; refusing to touch auto-merge");
+    if (!this.self) throw new Error("App identity unknown; refusing to touch auto-merge");
     const state = await this.autoMergeState(number);
     if (state.enabledBy === null || !sameActor(state.enabledBy, this.self)) return false;
     await this.octokit.graphql(

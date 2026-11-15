@@ -23,7 +23,10 @@ export interface FakeState {
   merged: boolean;
   calls: string[];
   fail: Partial<Record<string, Error>>; // method name -> error to throw
-  autoMergeCleanStatus: boolean;
+  autoMergeCleanStatus: boolean; // enablePullRequestAutoMerge fails with GitHub's "clean status" error
+  mergeStateStatus: string; // what the GraphQL query reports (CLEAN, BLOCKED, UNSTABLE, ...)
+  autoMergeVars: Record<string, unknown> | null; // variables of the last enable mutation
+  mergedSha: string | null;
   getContentRefs: string[];
 }
 
@@ -39,6 +42,9 @@ export function fakeOctokit(init: Partial<FakeState> = {}) {
     calls: [],
     fail: {},
     autoMergeCleanStatus: false,
+    mergeStateStatus: "BLOCKED",
+    autoMergeVars: null,
+    mergedSha: null,
     getContentRefs: [],
     ...init,
   };
@@ -123,9 +129,10 @@ export function fakeOctokit(init: Partial<FakeState> = {}) {
         if (r) r.state = "DISMISSED";
         return { data: {} };
       },
-      async merge() {
+      async merge(p: { sha: string }) {
         call("pulls.merge");
         s.merged = true;
+        s.mergedSha = p.sha;
         return { data: {} };
       },
       async listFiles() {
@@ -143,9 +150,16 @@ export function fakeOctokit(init: Partial<FakeState> = {}) {
     return (await method(params)).data;
   }
 
-  async function graphql(query: string) {
+  // Mirror @octokit/graphql: these keys are request options, not GraphQL
+  // variables. It rejects the first three outright and silently strips the rest.
+  const OCTOKIT_RESERVED = ["method", "baseUrl", "url", "headers", "request", "query", "mediaType", "operationName"];
+
+  async function graphql(query: string, vars: Record<string, unknown> = {}) {
+    const clash = Object.keys(vars).find((k) => OCTOKIT_RESERVED.includes(k));
+    if (clash) throw new Error(`[@octokit/graphql] "${clash}" cannot be used as variable name`);
     if (query.includes("enablePullRequestAutoMerge")) {
       call("graphql.enableAutoMerge");
+      s.autoMergeVars = vars;
       if (s.autoMergeCleanStatus) throw new Error("Pull request Pull request is in clean status");
       s.autoMergeBy = "merge-bot";
       return {};
@@ -160,6 +174,7 @@ export function fakeOctokit(init: Partial<FakeState> = {}) {
       repository: {
         pullRequest: {
           id: "PR_node",
+          mergeStateStatus: s.mergeStateStatus,
           autoMergeRequest: s.autoMergeBy ? { enabledBy: { login: s.autoMergeBy } } : null,
         },
       },

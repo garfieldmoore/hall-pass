@@ -4,7 +4,7 @@ author: garfieldmoore
 
 inputs:
   github-token:
-    description: merge-bot GitHub App installation token (from actions/create-github-app-token).
+    description: Installation token for the GitHub App hall-pass acts as (from actions/create-github-app-token).
     required: true
   config:
     description: Path to the config file, read from the PR's base commit.

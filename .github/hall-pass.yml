@@ -16,7 +16,7 @@ actions:
 
 classifiers:
   path-category:
-    mode: shadow         # switch to active once a few PRs look right
+    mode: active
     categories:
       docs-only:
         allow: ["**/*.md", "**/*.mdx"]

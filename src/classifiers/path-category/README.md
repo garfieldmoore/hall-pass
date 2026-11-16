@@ -21,7 +21,7 @@ Globs use [picomatch](https://github.com/micromatch/picomatch) with `dot: true`.
 
 ## Built-in behavioural deny list
 
-`BEHAVIOURAL_DENY` in [`index.ts`](index.ts) holds markdown and config that changes how agents or GitHub behave: `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, prompts, agent instructions, tool rule folders and `.github/**`. It applies to every category on top of the configured `deny`, matches case-insensitively, and config can't turn it off. See [Markdown that is behaviour, not docs](../../../README.md#markdown-that-is-behaviour-not-docs) for the full list and the reasoning.
+`BEHAVIOURAL_DENY` in [`src/shared.ts`](../../shared.ts) holds markdown and config that changes how agents or GitHub behave: `SKILL.md`, `CLAUDE.md`, `AGENTS.md`, prompts, agent instructions, tool rule folders and `.github/**`. It applies to every category on top of the configured `deny`, matches case-insensitively, and config can't turn it off. See [Markdown that is behaviour, not docs](../../../README.md#markdown-that-is-behaviour-not-docs) for the full list and the reasoning.
 
 ## Tests
 

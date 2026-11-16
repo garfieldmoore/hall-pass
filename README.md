@@ -2,17 +2,28 @@
 
 A GitHub Action that classifies pull requests and gives the low-risk ones a hall pass: approves them and turns on auto-merge, acting as a GitHub App you register for it (called *the App* below; name it whatever you like). Every other PR goes to human review, the same as now.
 
-v1 has one classifier, `path-category`, configured with one category, `docs-only`.
-
+- [Classifiers](#classifiers)
 - [How it decides](#how-it-decides)
 - [Markdown that is behaviour, not docs](#markdown-that-is-behaviour-not-docs)
 - [Consumer setup](#consumer-setup) (six steps)
 - [Config reference](#config-reference)
+- [Using with Dependabot](#using-with-dependabot)
 - [Backtest](#backtest)
-- [Adding a classifier](#adding-a-classifier)
-- [Developing and releasing](#developing-and-releasing)
 - [Design decisions](#design-decisions)
 - [Accepted risks](#accepted-risks)
+
+To work on hall-pass itself, or add a classifier, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Classifiers
+
+Each classifier has its own page describing what it checks and every config option.
+
+| Classifier | Kind | What it does |
+|---|---|---|
+| [`path-category`](src/classifiers/path-category/README.md) | eligibility | Puts a PR in a named category when every changed file matches that category's allowed paths, for example `docs-only`. |
+| [`dependabot-safe`](src/classifiers/dependabot-safe/README.md) | eligibility | Qualifies Dependabot updates that only touch manifests and lockfiles and whose dependencies pass the configured rules, for example patch and minor bumps only. |
+
+There are no veto classifiers yet. [How it decides](#how-it-decides) explains the two kinds.
 
 ## How it decides
 
@@ -63,7 +74,7 @@ Some `.md` files are instructions that a model or GitHub acts on. Changing one c
 - agent `instructions.md` files
 - `.github/copilot-instructions.md` and PR templates
 
-`path-category` has a built-in deny list for these, `BEHAVIOURAL_DENY` in `src/classifiers/path-category/index.ts`. It applies to **every** category on top of the configured `deny`, it matches **case-insensitively** (so `skill.md`, `Skills.md` and `SKILL.md` all match), and **config can't turn it off**. A consumer's config can only make the classifier stricter. The list also covers `.github/**`, so workflow and template changes always go to a human.
+`path-category` and `dependabot-safe` share a built-in deny list for these, `BEHAVIOURAL_DENY` in `src/shared.ts`. It applies to **every** `path-category` category on top of the configured `deny`, it matches **case-insensitively** (so `skill.md`, `Skills.md` and `SKILL.md` all match), and **config can't turn it off**. A consumer's config can only make the classifier stricter. The list also covers `.github/**`, so workflow and template changes always go to a human.
 
 | Covered | Globs |
 |---|---|
@@ -80,7 +91,7 @@ The list is deliberately broad. For example, `docs/agents/overview.md` is held b
 
 Backtesting showed why the list is needed. In a real repository, pure-markdown PRs that only added `.agents/skills/*/SKILL.md` files would have been auto-merged under the example deny list alone. The built-in list held them back.
 
-Path matching can't spot a behavioural file kept somewhere ordinary, such as a skill in `docs/foo.md` with skill frontmatter. That needs a content check. See [Adding a classifier](#adding-a-classifier) for a veto classifier that would catch it.
+Path matching can't spot a behavioural file kept somewhere ordinary, such as a skill in `docs/foo.md` with skill frontmatter. That needs a content check. See [Adding a classifier](CONTRIBUTING.md#adding-a-classifier) for a veto classifier that would catch it.
 
 ## Consumer setup
 
@@ -190,12 +201,7 @@ Unknown keys at any level are a config error.
 - `false` (default): the PR stays approved and the comment says a person needs to press merge.
 - `true`: hall-pass merges it directly, pinned to the head SHA it judged. Only turn this on once the ruleset requires your CI checks. A PR whose non-required checks are failing (`UNSTABLE`) is never merged directly.
 
-### Classifier settings
-
-Each classifier documents its own settings in the README in its folder:
-
-- [`path-category`](src/classifiers/path-category/README.md): eligibility. Paths only, for example docs-only.
-- [`dependabot-safe`](src/classifiers/dependabot-safe/README.md): eligibility. Dependabot updates that pass the configured rules, for example patch only.
+Each classifier's own settings are described on its page: see [Classifiers](#classifiers).
 
 ## Using with Dependabot
 
@@ -254,60 +260,6 @@ To see what the built-in list held back:
 ```bash
 jq -r '.results[] | select(.runs[].verdict.note // "" | contains("behavioural")) | "#\(.number) \(.title)"' report.json
 ```
-
-## Adding a classifier
-
-Each classifier is a folder under `src/classifiers/`, holding its code, its tests and its docs:
-
-```
-src/classifiers/<id>/
-  index.ts          # exports a Classifier<Cfg>
-  <id>.test.ts      # its tests, next to the code
-  README.md         # what it checks, its config, any built-in rules
-```
-
-1. Create the folder. `index.ts` exports a `Classifier<Cfg>`, with an `id`, a `kind`, a `description`, a zod `configSchema` and `run(ctx, cfg)`. Classifiers are pure. They do no GitHub writes and keep no state.
-2. Import it in `src/classifiers/index.ts` and add it to the array. Nothing else changes: `src/types.ts` is the contract.
-3. Write `<id>.test.ts`, including cases that must **not** qualify, or must veto. Build PR contexts with the helpers in `src/testing/`.
-4. Write `README.md` with its config and behaviour, and link it from [Classifier settings](#classifier-settings).
-5. Ship it, add it to a consumer's config in `shadow` mode, backtest, then switch it to `active`.
-
-For example, a veto classifier `agent-instructions` could fetch each changed `.md` file's content from the API at the head SHA. It would veto files whose YAML frontmatter has `name:` and `description:`, which is how skill files are shaped, or which say things like "You are…" or "When the user asks…". That covers behavioural markdown kept outside the usual paths. It would need its own read of file contents, which is fine because it reads through the API and doesn't check the code out.
-
-## Repository layout
-
-Tests sit next to the code they test, everywhere:
-
-```
-src/
-  main.ts, backtest.ts     # entry points (bundled into dist/)
-  runner.ts, runner.test.ts
-  config.ts, config.test.ts
-  context.ts, github.ts, types.ts
-  classifiers/
-    index.ts               # the registry
-    <id>/                  # one folder per classifier: index.ts, <id>.test.ts, README.md
-  testing/                 # shared test helpers: PR context builders, a fake Octokit, configs
-```
-
-`src/testing/` is for tests only. ESLint blocks importing it from non-test code, so it never reaches the bundle. Test files themselves aren't bundled either: esbuild only follows imports from `main.ts` and `backtest.ts`.
-
-## Developing and releasing
-
-```bash
-npm ci
-npm run check   # lint, type check, tests, build
-```
-
-- `dist/` is committed. CI fails if `npm run build` changes it, so always commit the rebuilt `dist/`.
-- To release, merge to `main`, then push a semver tag:
-
-  ```bash
-  git tag v1.2.3 && git push origin v1.2.3
-  ```
-
-  `release.yml` verifies the build and checks that the tag is on `main`. It then creates the GitHub release and moves the major tag (`v1`) to that commit.
-- This repo needs human review on every PR. Classifier code is never auto-merged.
 
 ## Design decisions
 
